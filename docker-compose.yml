@@ -204,15 +204,15 @@ services:
           memory: 512M
 
   # ==========================================
-  # Funcat API 服务 (可选)
+  # Funcat Web UI 服务 (涨跌停数据看板)
   # ==========================================
-  api:
+  webui:
     build:
-      context: ./api
+      context: ./web-ui/backend
       dockerfile: Dockerfile
 
-    image: funcat/api:2.0.0
-    container_name: funcat-api
+    image: funcat/webui:2.0.0
+    container_name: funcat-webui
     restart: unless-stopped
 
     depends_on:
@@ -237,17 +237,13 @@ services:
       TZ: Asia/Shanghai
 
     ports:
-      - "${API_PORT:-8080}:8080"
-
-    volumes:
-      - ./deployment/config/api.yaml:/app/config/api.yaml:ro
-      - api_logs:/app/logs
+      - "${WEBUI_PORT:-8080}:8080"
 
     networks:
       - funcat-network
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -267,10 +263,6 @@ services:
         reservations:
           cpus: '0.25'
           memory: 256M
-
-    # 可选服务
-    profiles:
-      - full
 
   # ==========================================
   # Nginx 反向代理 (可选)
@@ -399,8 +391,8 @@ volumes:
   selector_data:
     driver: local
 
-  # API服务
-  api_logs:
+  # Web UI服务
+  webui_logs:
     driver: local
 
   # Nginx
