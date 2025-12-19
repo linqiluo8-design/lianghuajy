@@ -1,0 +1,600 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>炒股养家心法 - 龙头选股系统</title>
+
+    <!-- Element Plus CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
+
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+                         'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            background: linear-gradient(135deg, #E74C3C 0%, #C0392B 100%);
+            min-height: 100vh;
+        }
+
+        #app {
+            padding: 20px;
+        }
+
+        .header {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        .header h1 {
+            font-size: 28px;
+            color: #E74C3C;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            color: #909399;
+            font-size: 14px;
+        }
+
+        .control-bar {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+        }
+
+        .tabs-container {
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+        }
+
+        .stock-card {
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #F5F7FA;
+            border-radius: 8px;
+            border-left: 4px solid #E74C3C;
+            transition: all 0.3s;
+            cursor: pointer;
+        }
+
+        .stock-card:hover {
+            background: #FEF0F0;
+            transform: translateX(5px);
+            box-shadow: 0 4px 12px rgba(231, 76, 60, 0.2);
+        }
+
+        .stock-card .header-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .stock-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #303133;
+        }
+
+        .stock-code {
+            color: #909399;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+
+        .score-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 14px;
+            font-weight: bold;
+            color: white;
+        }
+
+        .score-badge.A-plus { background: linear-gradient(135deg, #F56C6C, #E6A23C); }
+        .score-badge.A { background: linear-gradient(135deg, #E6A23C, #F39C12); }
+        .score-badge.B-plus { background: linear-gradient(135deg, #409EFF, #67C23A); }
+        .score-badge.B { background: linear-gradient(135deg, #67C23A, #85CE61); }
+        .score-badge.C { background: linear-gradient(135deg, #909399, #B3B3B3); }
+
+        .stock-info {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin: 10px 0;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            font-size: 13px;
+            color: #606266;
+        }
+
+        .info-label {
+            color: #909399;
+            margin-right: 5px;
+        }
+
+        .info-value {
+            font-weight: 500;
+            color: #303133;
+        }
+
+        .info-value.red {
+            color: #F56C6C;
+            font-weight: bold;
+        }
+
+        .select-reason {
+            margin-top: 10px;
+            padding: 10px;
+            background: white;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #606266;
+        }
+
+        .risk-tips {
+            margin-top: 10px;
+            padding: 10px;
+            background: #FEF0F0;
+            border-radius: 4px;
+            font-size: 13px;
+            color: #F56C6C;
+            border-left: 3px solid #F56C6C;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #909399;
+        }
+
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-item {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+        }
+
+        @media (max-width: 768px) {
+            .stock-info {
+                flex-direction: column;
+                gap: 8px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <!-- 头部 -->
+        <div class="header">
+            <h1>🔥 炒股养家心法 - 龙头选股系统</h1>
+            <div class="subtitle">只做龙头 · 板块效应 · 早盘封板 · 强者恒强</div>
+        </div>
+
+        <!-- 控制栏 -->
+        <div class="control-bar">
+            <el-row :gutter="20">
+                <el-col :xs="24" :sm="12" :md="8">
+                    <el-date-picker
+                        v-model="selectedDate"
+                        type="date"
+                        placeholder="选择日期"
+                        format="YYYY-MM-DD"
+                        value-format="YYYY-MM-DD"
+                        @change="loadResults"
+                        style="width: 100%"
+                    />
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="8">
+                    <el-button type="danger" @click="runSelector" :loading="selecting" style="width: 100%">
+                        <el-icon><Aim /></el-icon> {{ selecting ? '选股中...' : '执行选股' }}
+                    </el-button>
+                </el-col>
+                <el-col :xs="24" :sm="12" :md="8">
+                    <el-button type="primary" @click="loadResults" style="width: 100%">
+                        <el-icon><Refresh /></el-icon> 刷新数据
+                    </el-button>
+                </el-col>
+            </el-row>
+        </div>
+
+        <!-- 统计概览 -->
+        <div class="stats-row" v-if="stats.total > 0">
+            <div class="stat-item">
+                <div class="stat-label">龙头股</div>
+                <div class="stat-value">{{ stats.leaders }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">中军股</div>
+                <div class="stat-value">{{ stats.middle }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">补涨股</div>
+                <div class="stat-value">{{ stats.catchup }}</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-label">跟风股</div>
+                <div class="stat-value">{{ stats.followers }}</div>
+            </div>
+        </div>
+
+        <!-- 选股结果Tab -->
+        <div class="tabs-container">
+            <el-tabs v-model="activeTab" @tab-click="handleTabClick">
+                <el-tab-pane label="🏆 龙头股" name="leaders">
+                    <div v-if="leaders.length === 0" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>暂无龙头股数据，请先执行选股</div>
+                    </div>
+                    <div v-else>
+                        <div v-for="(stock, index) in leaders" :key="stock.stock_code" class="stock-card">
+                            <div class="header-row">
+                                <div>
+                                    <span class="stock-name">{{ stock.stock_name }}</span>
+                                    <span class="stock-code">{{ stock.stock_code }}</span>
+                                </div>
+                                <div class="score-badge" :class="stock.recommend_level.replace('+', '-plus')">
+                                    {{ stock.recommend_level }} · {{ stock.total_score.toFixed(1) }}分
+                                </div>
+                            </div>
+
+                            <div class="stock-info">
+                                <div class="info-item">
+                                    <span class="info-label">连板:</span>
+                                    <span class="info-value red">{{ stock.consecutive_days }}连</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">封板时间:</span>
+                                    <span class="info-value">{{ stock.first_limit_time }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">龙头强度:</span>
+                                    <span class="info-value">{{ stock.leader_strength.toFixed(1) }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块:</span>
+                                    <span class="info-value">{{ stock.sector_name }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块涨停:</span>
+                                    <span class="info-value red">{{ stock.sector_limit_count }}家</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块排名:</span>
+                                    <span class="info-value">第{{ stock.sector_position }}位</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">成交额:</span>
+                                    <span class="info-value">{{ formatMoney(stock.turnover) }}</span>
+                                </div>
+                                <div class="info-item" v-if="stock.is_one_word">
+                                    <el-tag type="danger" size="small">一字板</el-tag>
+                                </div>
+                                <div class="info-item" v-if="stock.is_broken">
+                                    <el-tag type="warning" size="small">炸板</el-tag>
+                                </div>
+                            </div>
+
+                            <div class="select-reason">
+                                💡 {{ stock.select_reason }}
+                            </div>
+                        </div>
+                    </div>
+                </el-tab-pane>
+
+                <el-tab-pane label="💎 中军股" name="middle">
+                    <div v-if="middle.length === 0" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>暂无中军股数据</div>
+                    </div>
+                    <div v-else>
+                        <div v-for="stock in middle" :key="stock.stock_code" class="stock-card">
+                            <div class="header-row">
+                                <div>
+                                    <span class="stock-name">{{ stock.stock_name }}</span>
+                                    <span class="stock-code">{{ stock.stock_code }}</span>
+                                </div>
+                                <div class="score-badge" :class="stock.recommend_level.replace('+', '-plus')">
+                                    {{ stock.recommend_level }} · {{ stock.total_score.toFixed(1) }}分
+                                </div>
+                            </div>
+
+                            <div class="stock-info">
+                                <div class="info-item">
+                                    <span class="info-label">成交额:</span>
+                                    <span class="info-value red">{{ formatMoney(stock.turnover) }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">换手率:</span>
+                                    <span class="info-value">{{ stock.turnover_rate.toFixed(2) }}%</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">封单量:</span>
+                                    <span class="info-value">{{ formatNumber(stock.seal_amount) }}手</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块:</span>
+                                    <span class="info-value">{{ stock.sector_name }}</span>
+                                </div>
+                                <div class="info-item" v-if="stock.consecutive_days > 0">
+                                    <span class="info-label">连板:</span>
+                                    <span class="info-value red">{{ stock.consecutive_days }}连</span>
+                                </div>
+                            </div>
+
+                            <div class="select-reason">
+                                💡 中军股 · 成交额{{ formatMoney(stock.turnover) }} · 承接力强
+                            </div>
+                        </div>
+                    </div>
+                </el-tab-pane>
+
+                <el-tab-pane label="🚀 补涨股" name="catchup">
+                    <div v-if="catchup.length === 0" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>暂无补涨股数据</div>
+                    </div>
+                    <div v-else>
+                        <div v-for="stock in catchup" :key="stock.stock_code" class="stock-card">
+                            <div class="header-row">
+                                <div>
+                                    <span class="stock-name">{{ stock.stock_name }}</span>
+                                    <span class="stock-code">{{ stock.stock_code }}</span>
+                                </div>
+                                <div class="score-badge" :class="stock.recommend_level.replace('+', '-plus')">
+                                    {{ stock.recommend_level }} · {{ stock.total_score.toFixed(1) }}分
+                                </div>
+                            </div>
+
+                            <div class="stock-info">
+                                <div class="info-item">
+                                    <span class="info-label">首次涨停:</span>
+                                    <span class="info-value">{{ stock.first_limit_time }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块:</span>
+                                    <span class="info-value">{{ stock.sector_name }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块涨停:</span>
+                                    <span class="info-value red">{{ stock.sector_limit_count }}家</span>
+                                </div>
+                                <div class="info-item">
+                                    <el-tag type="success" size="small">首板</el-tag>
+                                </div>
+                            </div>
+
+                            <div class="select-reason">
+                                💡 {{ stock.select_reason }}
+                            </div>
+                        </div>
+                    </div>
+                </el-tab-pane>
+
+                <el-tab-pane label="📊 跟风股" name="followers">
+                    <div v-if="followers.length === 0" class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <div>暂无跟风股数据</div>
+                    </div>
+                    <div v-else>
+                        <div v-for="stock in followers" :key="stock.stock_code" class="stock-card">
+                            <div class="header-row">
+                                <div>
+                                    <span class="stock-name">{{ stock.stock_name }}</span>
+                                    <span class="stock_code">{{ stock.stock_code }}</span>
+                                </div>
+                                <div class="score-badge C">
+                                    C · {{ stock.total_score.toFixed(1) }}分
+                                </div>
+                            </div>
+
+                            <div class="stock-info">
+                                <div class="info-item">
+                                    <span class="info-label">板块:</span>
+                                    <span class="info-value">{{ stock.sector_name }}</span>
+                                </div>
+                                <div class="info-item">
+                                    <span class="info-label">板块涨停:</span>
+                                    <span class="info-value">{{ stock.sector_limit_count }}家</span>
+                                </div>
+                            </div>
+
+                            <div class="select-reason">
+                                💡 {{ stock.select_reason }}
+                            </div>
+
+                            <div class="risk-tips" v-if="stock.risk_tips">
+                                ⚠️ {{ stock.risk_tips }}
+                            </div>
+                        </div>
+                    </div>
+                </el-tab-pane>
+            </el-tabs>
+        </div>
+    </div>
+
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
+    <!-- Element Plus -->
+    <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"></script>
+
+    <script>
+        const { createApp } = Vue;
+        const ElementPlus = window['element-plus'];
+
+        const app = createApp({
+            data() {
+                return {
+                    selectedDate: new Date().toISOString().split('T')[0],
+                    activeTab: 'leaders',
+                    selecting: false,
+
+                    leaders: [],
+                    middle: [],
+                    catchup: [],
+                    followers: [],
+
+                    stats: {
+                        total: 0,
+                        leaders: 0,
+                        middle: 0,
+                        catchup: 0,
+                        followers: 0
+                    }
+                };
+            },
+            mounted() {
+                this.loadResults();
+            },
+            methods: {
+                async runSelector() {
+                    this.selecting = true;
+                    try {
+                        const response = await fetch(`/api/v1/yangjia/run-selector?date=${this.selectedDate}`, {
+                            method: 'POST'
+                        });
+                        const result = await response.json();
+
+                        if (result.code === 200) {
+                            ElementPlus.ElMessage.success(result.message);
+                            await this.loadResults();
+                        } else {
+                            ElementPlus.ElMessage.error(result.message);
+                        }
+                    } catch (error) {
+                        console.error('选股失败:', error);
+                        ElementPlus.ElMessage.error('选股失败');
+                    } finally {
+                        this.selecting = false;
+                    }
+                },
+
+                async loadResults() {
+                    await Promise.all([
+                        this.loadLeaders(),
+                        this.loadMiddle(),
+                        this.loadCatchup(),
+                        this.loadFollowers()
+                    ]);
+                    this.calculateStats();
+                },
+
+                async loadLeaders() {
+                    try {
+                        const response = await fetch(`/api/v1/yangjia/leaders?date=${this.selectedDate}`);
+                        const result = await response.json();
+                        if (result.code === 200) {
+                            this.leaders = result.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载龙头股失败:', error);
+                    }
+                },
+
+                async loadMiddle() {
+                    try {
+                        const response = await fetch(`/api/v1/yangjia/middle?date=${this.selectedDate}`);
+                        const result = await response.json();
+                        if (result.code === 200) {
+                            this.middle = result.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载中军股失败:', error);
+                    }
+                },
+
+                async loadCatchup() {
+                    try {
+                        const response = await fetch(`/api/v1/yangjia/catchup?date=${this.selectedDate}`);
+                        const result = await response.json();
+                        if (result.code === 200) {
+                            this.catchup = result.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载补涨股失败:', error);
+                    }
+                },
+
+                async loadFollowers() {
+                    try {
+                        const response = await fetch(`/api/v1/yangjia/followers?date=${this.selectedDate}`);
+                        const result = await response.json();
+                        if (result.code === 200) {
+                            this.followers = result.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载跟风股失败:', error);
+                    }
+                },
+
+                calculateStats() {
+                    this.stats.leaders = this.leaders.length;
+                    this.stats.middle = this.middle.length;
+                    this.stats.catchup = this.catchup.length;
+                    this.stats.followers = this.followers.length;
+                    this.stats.total = this.stats.leaders + this.stats.middle + this.stats.catchup + this.stats.followers;
+                },
+
+                handleTabClick(tab) {
+                    // Tab切换处理
+                },
+
+                formatNumber(num) {
+                    if (!num) return '0';
+                    if (num >= 10000) return (num / 10000).toFixed(1) + '万';
+                    return num.toLocaleString();
+                },
+
+                formatMoney(amount) {
+                    if (!amount) return '0';
+                    if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿';
+                    if (amount >= 10000) return (amount / 10000).toFixed(2) + '万';
+                    return amount.toFixed(2);
+                }
+            }
+        });
+
+        app.use(ElementPlus);
+        app.mount('#app');
+    </script>
+</body>
+</html>

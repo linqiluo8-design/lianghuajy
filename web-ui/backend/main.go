@@ -106,6 +106,32 @@ type APIResponse struct {
 	Data    interface{} `json:"data"`
 }
 
+// YangjiaSelectResult 炒股养家选股结果
+type YangjiaSelectResult struct {
+	ID              int     `json:"id"`
+	TradeDate       string  `json:"trade_date"`
+	StockCode       string  `json:"stock_code"`
+	StockName       string  `json:"stock_name"`
+	StockRole       string  `json:"stock_role"`
+	RoleScore       float64 `json:"role_score"`
+	IsSectorLeader  bool    `json:"is_sector_leader"`
+	IsFirstLimit    bool    `json:"is_first_limit"`
+	LeaderStrength  float64 `json:"leader_strength"`
+	ConsecutiveDays int     `json:"consecutive_days"`
+	FirstLimitTime  string  `json:"first_limit_time"`
+	SealStrength    float64 `json:"seal_strength"`
+	TurnoverRate    float64 `json:"turnover_rate"`
+	SectorName      string  `json:"sector_name"`
+	SectorLimitCount int    `json:"sector_limit_count"`
+	SectorPosition  int     `json:"sector_position"`
+	Turnover        float64 `json:"turnover"`
+	SealAmount      int64   `json:"seal_amount"`
+	TotalScore      float64 `json:"total_score"`
+	RecommendLevel  string  `json:"recommend_level"`
+	SelectReason    string  `json:"select_reason"`
+	RiskTips        string  `json:"risk_tips"`
+}
+
 // ============================================
 // 数据库初始化
 // ============================================
@@ -412,6 +438,374 @@ func healthCheck(c *gin.Context) {
 }
 
 // ============================================
+// 炒股养家心法 API 处理函数
+// ============================================
+
+// runYangjiaSelector 运行炒股养家选股
+func runYangjiaSelector(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+
+	// 调用选股函数
+	query := `SELECT * FROM yangjia_stock_selector($1)`
+	rows, err := db.Query(query, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "选股执行失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]interface{}{}
+	for rows.Next() {
+		var stockCode, stockName, stockRole, recommendLevel, selectReason string
+		var totalScore float64
+
+		err := rows.Scan(&stockCode, &stockName, &stockRole, &totalScore, &recommendLevel, &selectReason)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"stock_code":       stockCode,
+			"stock_name":       stockName,
+			"stock_role":       stockRole,
+			"total_score":      totalScore,
+			"recommend_level":  recommendLevel,
+			"select_reason":    selectReason,
+		})
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: fmt.Sprintf("选股完成，共选出%d只股票", len(results)),
+		Data:    results,
+	})
+}
+
+// getYangjiaResults 获取炒股养家选股结果
+func getYangjiaResults(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+	role := c.Query("role") // leader, middle, catchup, follower
+
+	query := `
+		SELECT
+			stock_code, stock_name, stock_role, leader_strength,
+			consecutive_days, first_limit_time, sector_name,
+			sector_limit_count, sector_position, turnover,
+			seal_amount, total_score, recommend_level, select_reason,
+			COALESCE(risk_tips, '') as risk_tips
+		FROM yangjia_select_results
+		WHERE trade_date = $1
+	`
+
+	args := []interface{}{date}
+	if role != "" {
+		query += " AND stock_role = $2"
+		args = append(args, role)
+	}
+
+	query += " ORDER BY total_score DESC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []YangjiaSelectResult{}
+	for rows.Next() {
+		var r YangjiaSelectResult
+		err := rows.Scan(
+			&r.StockCode, &r.StockName, &r.StockRole, &r.LeaderStrength,
+			&r.ConsecutiveDays, &r.FirstLimitTime, &r.SectorName,
+			&r.SectorLimitCount, &r.SectorPosition, &r.Turnover,
+			&r.SealAmount, &r.TotalScore, &r.RecommendLevel, &r.SelectReason,
+			&r.RiskTips,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+		results = append(results, r)
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    results,
+	})
+}
+
+// getYangjiaLeaders 获取龙头股
+func getYangjiaLeaders(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+
+	query := `
+		SELECT
+			trade_date, stock_code, stock_name, consecutive_days,
+			first_limit_time, sector_name, sector_limit_count,
+			sector_position, leader_strength, seal_strength,
+			turnover, total_score, recommend_level, select_reason,
+			change_pct, is_one_word, is_broken
+		FROM v_yangjia_leaders
+		WHERE trade_date = $1
+		ORDER BY total_score DESC
+	`
+
+	rows, err := db.Query(query, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]interface{}{}
+	for rows.Next() {
+		var tradeDate, stockCode, stockName, firstLimitTime, sectorName, recommendLevel, selectReason string
+		var consecutiveDays, sectorLimitCount, sectorPosition int
+		var leaderStrength, sealStrength, turnover, totalScore, changePct float64
+		var isOneWord, isBroken bool
+
+		err := rows.Scan(
+			&tradeDate, &stockCode, &stockName, &consecutiveDays,
+			&firstLimitTime, &sectorName, &sectorLimitCount,
+			&sectorPosition, &leaderStrength, &sealStrength,
+			&turnover, &totalScore, &recommendLevel, &selectReason,
+			&changePct, &isOneWord, &isBroken,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"trade_date":         tradeDate,
+			"stock_code":         stockCode,
+			"stock_name":         stockName,
+			"consecutive_days":   consecutiveDays,
+			"first_limit_time":   firstLimitTime,
+			"sector_name":        sectorName,
+			"sector_limit_count": sectorLimitCount,
+			"sector_position":    sectorPosition,
+			"leader_strength":    leaderStrength,
+			"seal_strength":      sealStrength,
+			"turnover":           turnover,
+			"total_score":        totalScore,
+			"recommend_level":    recommendLevel,
+			"select_reason":      selectReason,
+			"change_pct":         changePct,
+			"is_one_word":        isOneWord,
+			"is_broken":          isBroken,
+		})
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    results,
+	})
+}
+
+// getYangjiaMiddle 获取中军股
+func getYangjiaMiddle(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+
+	query := `
+		SELECT
+			trade_date, stock_code, stock_name, sector_name,
+			turnover, turnover_rate, seal_amount, total_score,
+			recommend_level, change_pct, consecutive_limit_days
+		FROM v_yangjia_middle
+		WHERE trade_date = $1
+		ORDER BY total_score DESC
+	`
+
+	rows, err := db.Query(query, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]interface{}{}
+	for rows.Next() {
+		var tradeDate, stockCode, stockName, sectorName, recommendLevel string
+		var consecutiveDays int
+		var turnover, turnoverRate, totalScore, changePct float64
+		var sealAmount int64
+
+		err := rows.Scan(
+			&tradeDate, &stockCode, &stockName, &sectorName,
+			&turnover, &turnoverRate, &sealAmount, &totalScore,
+			&recommendLevel, &changePct, &consecutiveDays,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"trade_date":        tradeDate,
+			"stock_code":        stockCode,
+			"stock_name":        stockName,
+			"sector_name":       sectorName,
+			"turnover":          turnover,
+			"turnover_rate":     turnoverRate,
+			"seal_amount":       sealAmount,
+			"total_score":       totalScore,
+			"recommend_level":   recommendLevel,
+			"change_pct":        changePct,
+			"consecutive_days":  consecutiveDays,
+		})
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    results,
+	})
+}
+
+// getYangjiaCatchup 获取补涨股
+func getYangjiaCatchup(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+
+	query := `
+		SELECT
+			trade_date, stock_code, stock_name, sector_name,
+			sector_limit_count, total_score, recommend_level,
+			select_reason, change_pct, consecutive_limit_days, first_limit_time
+		FROM v_yangjia_catchup
+		WHERE trade_date = $1
+		ORDER BY total_score DESC
+	`
+
+	rows, err := db.Query(query, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]interface{}{}
+	for rows.Next() {
+		var tradeDate, stockCode, stockName, sectorName, recommendLevel, selectReason, firstLimitTime string
+		var sectorLimitCount, consecutiveDays int
+		var totalScore, changePct float64
+
+		err := rows.Scan(
+			&tradeDate, &stockCode, &stockName, &sectorName,
+			&sectorLimitCount, &totalScore, &recommendLevel,
+			&selectReason, &changePct, &consecutiveDays, &firstLimitTime,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"trade_date":         tradeDate,
+			"stock_code":         stockCode,
+			"stock_name":         stockName,
+			"sector_name":        sectorName,
+			"sector_limit_count": sectorLimitCount,
+			"total_score":        totalScore,
+			"recommend_level":    recommendLevel,
+			"select_reason":      selectReason,
+			"change_pct":         changePct,
+			"consecutive_days":   consecutiveDays,
+			"first_limit_time":   firstLimitTime,
+		})
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    results,
+	})
+}
+
+// getYangjiaFollowers 获取跟风股
+func getYangjiaFollowers(c *gin.Context) {
+	date := c.DefaultQuery("date", time.Now().Format("2006-01-02"))
+
+	query := `
+		SELECT
+			stock_code, stock_name, sector_name, sector_limit_count,
+			total_score, recommend_level, select_reason,
+			COALESCE(risk_tips, '') as risk_tips
+		FROM yangjia_select_results
+		WHERE trade_date = $1 AND stock_role = 'follower'
+		ORDER BY total_score DESC
+	`
+
+	rows, err := db.Query(query, date)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	results := []map[string]interface{}{}
+	for rows.Next() {
+		var stockCode, stockName, sectorName, recommendLevel, selectReason, riskTips string
+		var sectorLimitCount int
+		var totalScore float64
+
+		err := rows.Scan(
+			&stockCode, &stockName, &sectorName, &sectorLimitCount,
+			&totalScore, &recommendLevel, &selectReason, &riskTips,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+
+		results = append(results, map[string]interface{}{
+			"stock_code":         stockCode,
+			"stock_name":         stockName,
+			"sector_name":        sectorName,
+			"sector_limit_count": sectorLimitCount,
+			"total_score":        totalScore,
+			"recommend_level":    recommendLevel,
+			"select_reason":      selectReason,
+			"risk_tips":          riskTips,
+		})
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    results,
+	})
+}
+
+// ============================================
 // 工具函数
 // ============================================
 
@@ -457,6 +851,14 @@ func main() {
 
 		// 连板天梯
 		api.GET("/consecutive-ladder", getConsecutiveLadder)
+
+		// 炒股养家心法
+		api.POST("/yangjia/run-selector", runYangjiaSelector)
+		api.GET("/yangjia/results", getYangjiaResults)
+		api.GET("/yangjia/leaders", getYangjiaLeaders)
+		api.GET("/yangjia/middle", getYangjiaMiddle)
+		api.GET("/yangjia/catchup", getYangjiaCatchup)
+		api.GET("/yangjia/followers", getYangjiaFollowers)
 	}
 
 	// 静态文件服务（前端页面）

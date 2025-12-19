@@ -214,6 +214,11 @@
         <div class="header">
             <h1>📊 Funcat 涨跌停数据看板</h1>
             <div class="subtitle">实时监控市场热点 · 板块涨停统计 · 连板天梯</div>
+            <div style="margin-top: 15px;">
+                <el-button type="danger" @click="goToYangjia">
+                    🔥 炒股养家心法选股
+                </el-button>
+            </div>
         </div>
 
         <!-- 筛选栏 -->
@@ -605,6 +610,10 @@
                     if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿';
                     if (amount >= 10000) return (amount / 10000).toFixed(2) + '万';
                     return amount.toFixed(2);
+                },
+
+                goToYangjia() {
+                    window.location.href = '/static/yangjia.html';
                 }
             }
         });
