@@ -95,29 +95,28 @@ services:
   # InfluxDB 时序数据库 (可选)
   # ==========================================
   influxdb:
-    image: influxdb:2.0-alpine
+    image: docker.io/library/influxdb:3.5.0-core
     container_name: funcat-influxdb
     restart: unless-stopped
 
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USER:-admin}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-influxdb_password_change_me}
-      DOCKER_INFLUXDB_INIT_ORG: funcat
-      DOCKER_INFLUXDB_INIT_BUCKET: stock_data
-      DOCKER_INFLUXDB_INIT_RETENTION: 30d
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN:-my-super-secret-auth-token}
+      # InfluxDB 3.x 配置
+      LOG_FILTER: ${INFLUXDB_LOG_LEVEL:-info}
+      INFLUXDB3_DATA_DIR: /home/influxdb3/.influxdb3
+      INFLUXDB_IOX_DB_DIR: /var/lib/influxdb3
 
     ports:
-      - "${INFLUXDB_PORT:-8086}:8086"
+      # InfluxDB 3.x 使用 8181 端口（不是 8086）
+      - "${INFLUXDB_PORT:-8181}:8181"
 
     volumes:
-      # 数据持久化
-      - influxdb_data:/var/lib/influxdb2
-      - influxdb_config:/etc/influxdb2
+      # 数据持久化（3.x 数据目录）
+      - influxdb_data:/var/lib/influxdb3
+      - influxdb_home:/home/influxdb3
 
     healthcheck:
-      test: ["CMD", "influx", "ping"]
+      # InfluxDB 3.x 健康检查
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -381,7 +380,7 @@ volumes:
   influxdb_data:
     driver: local
 
-  influxdb_config:
+  influxdb_home:
     driver: local
 
   # 选股服务
