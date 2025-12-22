@@ -2,6 +2,4 @@ module github.com/funcat/funcat-go
 
 go 1.21
 
-require (
-	gonum.org/v1/gonum v0.14.0
-)
+require github.com/lib/pq v1.10.9
