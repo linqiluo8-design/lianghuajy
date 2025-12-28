@@ -7,6 +7,10 @@ FROM golang:1.21-alpine AS builder
 # 设置工作目录
 WORKDIR /build
 
+# 设置Go代理（解决国内网络问题）
+ENV GOPROXY=https://goproxy.cn,direct
+ENV GO111MODULE=on
+
 # 安装依赖
 RUN apk add --no-cache git
 
