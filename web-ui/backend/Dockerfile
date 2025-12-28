@@ -14,11 +14,11 @@ ENV GO111MODULE=on
 # 安装依赖
 RUN apk add --no-cache git
 
-# 复制 go.mod 和 go.sum
-COPY go.mod go.sum* ./
+# 复制 go.mod（go.sum 可选）
+COPY go.mod ./
 
-# 下载依赖
-RUN go mod download
+# 生成 go.sum 并下载依赖
+RUN go mod tidy && go mod download
 
 # 复制源代码
 COPY . .
