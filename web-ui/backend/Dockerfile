@@ -11,11 +11,14 @@ WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,direct
 ENV GO111MODULE=on
 
-# 安装依赖
-RUN apk add --no-cache git
+# 安装依赖（包括wget用于下载CDN资源）
+RUN apk add --no-cache git wget
 
 # 复制所有源代码（go mod tidy 需要分析源码）
 COPY . .
+
+# 下载CDN资源到本地
+RUN chmod +x download-cdn.sh && ./download-cdn.sh
 
 # 生成 go.sum 并下载依赖
 RUN go mod tidy && go mod download
@@ -45,7 +48,7 @@ WORKDIR /app
 # 从构建阶段复制二进制文件
 COPY --from=builder /build/funcat-web-ui .
 
-# 复制静态文件
+# 复制静态文件（包括下载的CDN资源）
 COPY --from=builder /build/static ./static
 
 # 修改所有权

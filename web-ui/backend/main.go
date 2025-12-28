@@ -188,7 +188,7 @@ func getSectors(c *gin.Context) {
 		query += " AND sector_type = $1"
 		args = append(args, sectorType)
 	}
-	query += " ORDER BY sort_order, sector_name"
+	query += " ORDER BY sector_name"
 
 	rows, err := db.Query(query, args...)
 	if err != nil {
@@ -375,7 +375,7 @@ func getConsecutiveLadder(c *gin.Context) {
 		SELECT
 			stock_code, stock_name, consecutive_days, start_date,
 			COALESCE(total_gain_pct, 0), COALESCE(avg_seal_ratio, 0),
-			COALESCE(main_sector, ''), COALESCE(concept_tags, '{}'),
+			COALESCE(main_sector, ''),
 			COALESCE(close_price, 0), COALESCE(seal_amount, 0),
 			COALESCE(first_limit_time, ''), COALESCE(is_one_word, false),
 			COALESCE(is_broken, false), COALESCE(broken_count, 0)
@@ -399,10 +399,9 @@ func getConsecutiveLadder(c *gin.Context) {
 	ladder := []ConsecutiveLadder{}
 	for rows.Next() {
 		var l ConsecutiveLadder
-		var conceptTags string
 		err := rows.Scan(
 			&l.StockCode, &l.StockName, &l.ConsecutiveDays, &l.StartDate,
-			&l.TotalGainPct, &l.AvgSealRatio, &l.MainSector, &conceptTags,
+			&l.TotalGainPct, &l.AvgSealRatio, &l.MainSector,
 			&l.ClosePrice, &l.SealAmount, &l.FirstLimitTime,
 			&l.IsOneWord, &l.IsBroken, &l.BrokenCount,
 		)
@@ -411,12 +410,8 @@ func getConsecutiveLadder(c *gin.Context) {
 			continue
 		}
 
-		// 解析概念标签（简单处理）
-		if conceptTags != "{}" && conceptTags != "" {
-			// PostgreSQL数组格式转换
-			// 这里简化处理，实际可能需要更复杂的解析
-			l.ConceptTags = []string{}
-		}
+		// 初始化空的概念标签数组
+		l.ConceptTags = []string{}
 
 		ladder = append(ladder, l)
 	}
