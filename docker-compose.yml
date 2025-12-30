@@ -26,6 +26,10 @@ services:
       # 初始化SQL脚本
       - ./deployment/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./deployment/sql/init_data.sql:/docker-entrypoint-initdb.d/02-init_data.sql:ro
+      - ./deployment/sql/webui_tables.sql:/docker-entrypoint-initdb.d/03-webui_tables.sql:ro
+      - ./deployment/sql/05-yangjia_schema_fixed.sql:/docker-entrypoint-initdb.d/05-yangjia_schema_fixed.sql:ro
+      - ./deployment/sql/06-sector_strength.sql:/docker-entrypoint-initdb.d/06-sector_strength.sql:ro
+      - ./deployment/sql/test_data.sql:/docker-entrypoint-initdb.d/07-test_data.sql:ro
       # 自定义配置
       - ./deployment/config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
 
