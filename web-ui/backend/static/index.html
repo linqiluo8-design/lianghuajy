@@ -4,31 +4,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Funcat 涨跌停数据看板</title>
-
-    <!-- Element Plus CSS -->
     <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
-
-    <!-- ECharts -->
     <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
-
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
-                         'Microsoft YaHei', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-family: 'Microsoft YaHei', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-        }
-
-        #app {
+            margin: 0;
             padding: 20px;
         }
-
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
         .header {
             background: white;
             padding: 20px;
@@ -36,79 +25,34 @@
             margin-bottom: 20px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.1);
         }
-
-        .header h1 {
-            font-size: 28px;
-            color: #303133;
-            margin-bottom: 10px;
-        }
-
-        .header .subtitle {
-            color: #909399;
-            font-size: 14px;
-        }
-
-        .filter-bar {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        }
-
-        .stats-overview {
+        .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: repeat(4, 1fr);
             gap: 20px;
             margin-bottom: 20px;
         }
-
         .stat-card {
             background: white;
             padding: 20px;
             border-radius: 10px;
+            text-align: center;
             box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-            transition: transform 0.3s;
         }
-
-        .stat-card:hover {
-            transform: translateY(-5px);
-        }
-
-        .stat-card .icon {
-            font-size: 32px;
-            margin-bottom: 10px;
-        }
-
-        .stat-card .value {
-            font-size: 32px;
+        .stat-value {
+            font-size: 36px;
             font-weight: bold;
             margin: 10px 0;
         }
-
-        .stat-card .label {
+        .stat-label {
             color: #909399;
-            font-size: 14px;
         }
-
-        .stat-card.red .value { color: #F56C6C; }
-        .stat-card.green .value { color: #67C23A; }
-        .stat-card.blue .value { color: #409EFF; }
-        .stat-card.orange .value { color: #E6A23C; }
-
-        .main-content {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 20px;
-        }
-
         .panel {
             background: white;
             padding: 20px;
             border-radius: 10px;
+            margin-bottom: 20px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.1);
         }
-
         .panel-title {
             font-size: 18px;
             font-weight: bold;
@@ -116,674 +60,169 @@
             padding-bottom: 10px;
             border-bottom: 2px solid #E4E7ED;
         }
-
-        .ladder-item {
-            display: flex;
-            align-items: center;
-            padding: 15px;
-            margin-bottom: 10px;
-            background: #F5F7FA;
-            border-radius: 8px;
-            transition: all 0.3s;
-            cursor: pointer;
-        }
-
-        .ladder-item:hover {
-            background: #ECF5FF;
-            transform: translateX(5px);
-        }
-
-        .ladder-rank {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            color: white;
-            margin-right: 15px;
-        }
-
-        .ladder-rank.gold { background: linear-gradient(135deg, #FFD700, #FFA500); }
-        .ladder-rank.silver { background: linear-gradient(135deg, #C0C0C0, #808080); }
-        .ladder-rank.bronze { background: linear-gradient(135deg, #CD7F32, #8B4513); }
-        .ladder-rank.normal { background: linear-gradient(135deg, #909399, #606266); }
-
-        .ladder-info {
-            flex: 1;
-        }
-
-        .ladder-stock {
-            font-size: 16px;
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .ladder-details {
-            font-size: 12px;
-            color: #909399;
-        }
-
-        .ladder-badge {
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 18px;
-            font-weight: bold;
-            color: white;
-            background: linear-gradient(135deg, #F56C6C, #E6A23C);
-        }
-
-        .tag-group {
-            margin-top: 5px;
-        }
-
-        .stock-tag {
-            display: inline-block;
-            padding: 2px 8px;
-            margin-right: 5px;
-            border-radius: 4px;
-            font-size: 12px;
-            background: #ECF5FF;
-            color: #409EFF;
-        }
-
-        .full-width {
-            grid-column: 1 / -1;
-        }
-
-        #sectorChart {
+        #chart {
             width: 100%;
             height: 400px;
         }
-
-        @media (max-width: 768px) {
-            .main-content {
-                grid-template-columns: 1fr;
-            }
-
-            .stats-overview {
-                grid-template-columns: repeat(2, 1fr);
-            }
-        }
+        .red { color: #F56C6C; }
+        .green { color: #67C23A; }
+        .blue { color: #409EFF; }
+        .orange { color: #E6A23C; }
     </style>
 </head>
 <body>
-    <div id="app">
-        <!-- 头部 -->
+    <div id="app" class="container">
         <div class="header">
             <h1>📊 Funcat 涨跌停数据看板</h1>
-            <div class="subtitle">实时监控市场热点 · 板块涨停统计 · 连板天梯</div>
-            <div style="margin-top: 15px;">
-                <el-button type="danger" @click="goToYangjia">
-                    🔥 炒股养家心法选股
-                </el-button>
+            <p>实时监控市场热点 · 板块涨停统计</p>
+            <el-button type="primary" @click="loadData" style="margin-top: 10px;">🔄 刷新数据</el-button>
+        </div>
+
+        <div class="stats">
+            <div class="stat-card">
+                <div class="stat-value red">{{ totalLimitUp }}</div>
+                <div class="stat-label">涨停家数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value green">{{ totalLimitDown }}</div>
+                <div class="stat-label">跌停家数</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value blue">{{ totalOneWord }}</div>
+                <div class="stat-label">一字涨停</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value orange">{{ totalBroken }}</div>
+                <div class="stat-label">炸板总数</div>
             </div>
         </div>
 
-        <!-- 筛选栏 -->
-        <div class="filter-bar">
-            <el-row :gutter="20">
-                <el-col :xs="24" :sm="12" :md="6">
-                    <el-date-picker
-                        v-model="selectedDate"
-                        type="date"
-                        placeholder="选择日期"
-                        format="YYYY-MM-DD"
-                        value-format="YYYY-MM-DD"
-                        @change="loadData"
-                        style="width: 100%"
-                    />
-                </el-col>
-                <el-col :xs="24" :sm="12" :md="6">
-                    <el-select v-model="selectedSector" placeholder="选择板块" @change="loadLimitStats" style="width: 100%">
-                        <el-option label="全部板块" value=""></el-option>
-                        <el-option
-                            v-for="sector in sectors"
-                            :key="sector.id"
-                            :label="sector.sector_name"
-                            :value="sector.id"
-                        />
-                    </el-select>
-                </el-col>
-                <el-col :xs="24" :sm="12" :md="6">
-                    <el-select v-model="limitType" placeholder="涨跌停类型" @change="loadLimitStats" style="width: 100%">
-                        <el-option label="全部" value=""></el-option>
-                        <el-option label="涨停" value="limit_up"></el-option>
-                        <el-option label="跌停" value="limit_down"></el-option>
-                    </el-select>
-                </el-col>
-                <el-col :xs="24" :sm="12" :md="6">
-                    <el-button type="primary" @click="loadData" style="width: 100%">
-                        🔄 刷新数据
-                    </el-button>
-                </el-col>
-            </el-row>
+        <div class="panel">
+            <div class="panel-title">📊 板块涨停排行</div>
+            <div id="chart"></div>
         </div>
 
-        <!-- 统计概览 -->
-        <div class="stats-overview">
-            <div class="stat-card red">
-                <div class="icon">📈</div>
-                <div class="value">{{ totalLimitUp }}</div>
-                <div class="label">涨停家数</div>
-            </div>
-            <div class="stat-card green">
-                <div class="icon">📉</div>
-                <div class="value">{{ totalLimitDown }}</div>
-                <div class="label">跌停家数</div>
-            </div>
-            <div class="stat-card blue">
-                <div class="icon">🔥</div>
-                <div class="value">{{ totalOneWord }}</div>
-                <div class="label">一字涨停</div>
-            </div>
-            <div class="stat-card orange">
-                <div class="icon">💥</div>
-                <div class="value">{{ totalBroken }}</div>
-                <div class="label">炸板总数</div>
-            </div>
-        </div>
-
-        <!-- 主内容区 -->
-        <div class="main-content">
-            <!-- 板块涨停排行 -->
-            <div class="panel">
-                <div class="panel-title">📊 板块涨停排行</div>
-                <div id="sectorChart"></div>
-            </div>
-
-            <!-- 连板天梯 -->
-            <div class="panel">
-                <div class="panel-title">🏆 连板天梯</div>
-                <div v-if="ladder.length === 0" style="text-align: center; padding: 40px; color: #909399;">
-                    暂无连板数据
-                </div>
-                <div v-else>
-                    <div v-for="(item, index) in ladder" :key="item.stock_code" class="ladder-item">
-                        <div :class="['ladder-rank', getRankClass(index)]">
-                            {{ index + 1 }}
-                        </div>
-                        <div class="ladder-info">
-                            <div class="ladder-stock">
-                                {{ item.stock_name }} ({{ item.stock_code }})
-                            </div>
-                            <div class="ladder-details">
-                                {{ item.main_sector || '未知板块' }} ·
-                                封单: {{ formatNumber(item.seal_amount) }}手 ·
-                                累计: {{ item.total_gain_pct.toFixed(2) }}%
-                                <el-tag v-if="item.is_one_word" type="danger" size="small" style="margin-left: 5px">一字</el-tag>
-                                <el-tag v-if="item.is_broken" type="warning" size="small" style="margin-left: 5px">炸板{{ item.broken_count }}次</el-tag>
-                            </div>
-                        </div>
-                        <div class="ladder-badge">
-                            {{ item.consecutive_days }}连
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- 板块强度排行 -->
-        <div class="panel full-width" style="margin-top: 20px;">
-            <div class="panel-title">🔥 板块强度排行</div>
-            <el-table :data="sectorStrength" stripe style="width: 100%" max-height="400">
-                <el-table-column type="index" label="排名" width="60" fixed />
-                <el-table-column prop="sector_name" label="板块名称" width="120" fixed>
-                    <template #default="scope">
-                        <strong>{{ scope.row.sector_name }}</strong>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="strength_grade" label="强度等级" width="90" sortable>
-                    <template #default="scope">
-                        <el-tag
-                            :type="scope.row.strength_grade === 'S' ? 'danger' :
-                                   scope.row.strength_grade === 'A+' ? 'danger' :
-                                   scope.row.strength_grade === 'A' ? 'warning' :
-                                   scope.row.strength_grade === 'B' ? 'info' : ''"
-                            size="large"
-                            effect="dark"
-                            style="font-weight: bold; font-size: 14px;">
-                            {{ scope.row.strength_grade }}
-                        </el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="strength_score" label="强度分数" width="110" sortable>
-                    <template #default="scope">
-                        <span style="color: #E6A23C; font-weight: bold; font-size: 16px;">
-                            {{ scope.row.strength_score.toFixed(1) }}
+        <div class="panel">
+            <div class="panel-title">🔥 板块强度排行（日期: {{ selectedDate }}）</div>
+            <el-table :data="sectorStrength" stripe style="width: 100%">
+                <el-table-column type="index" label="排名" width="60"></el-table-column>
+                <el-table-column prop="sector_name" label="板块名称" width="120"></el-table-column>
+                <el-table-column prop="strength_grade" label="等级" width="80"></el-table-column>
+                <el-table-column label="强度分数" width="110">
+                    <template v-slot="scope">
+                        <span class="orange" style="font-weight: bold;">
+                            {{ safeFixed(scope.row.strength_score, 1) }}
                         </span>
                     </template>
                 </el-table-column>
-                <el-table-column prop="limit_up_count" label="涨停数" width="90" sortable>
-                    <template #default="scope">
-                        <el-tag type="danger" size="large">{{ scope.row.limit_up_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="one_word_count" label="一字板" width="90" sortable>
-                    <template #default="scope">
-                        <el-tag type="danger" effect="dark">{{ scope.row.one_word_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column label="连板分布" width="180">
-                    <template #default="scope">
-                        <span style="font-size: 12px;">
-                            2连:<strong>{{ scope.row.consecutive_2_count }}</strong>
-                            3连:<strong style="color: #E6A23C;">{{ scope.row.consecutive_3_count }}</strong>
-                            4连:<strong style="color: #F56C6C;">{{ scope.row.consecutive_4_count }}</strong>
-                            5+:<strong style="color: #F56C6C;">{{ scope.row.consecutive_5_plus_count }}</strong>
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="health_rate" label="健康度%" width="100" sortable>
-                    <template #default="scope">
-                        <span :style="{color: scope.row.health_rate >= 80 ? '#67C23A' :
-                                            scope.row.health_rate >= 60 ? '#E6A23C' : '#F56C6C'}">
-                            {{ scope.row.health_rate.toFixed(0) }}%
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="high_consecutive_rate" label="高连板率%" width="110" sortable>
-                    <template #default="scope">
-                        <span :style="{color: scope.row.high_consecutive_rate >= 30 ? '#F56C6C' :
-                                            scope.row.high_consecutive_rate >= 15 ? '#E6A23C' : '#909399'}">
-                            {{ scope.row.high_consecutive_rate.toFixed(0) }}%
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="avg_change_pct" label="平均涨幅%" width="110" sortable>
-                    <template #default="scope">
-                        <span style="color: #F56C6C; font-weight: bold;">
-                            {{ scope.row.avg_change_pct.toFixed(2) }}%
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="total_turnover" label="总成交额" width="120" sortable>
-                    <template #default="scope">
-                        {{ formatMoney(scope.row.total_turnover) }}
-                    </template>
-                </el-table-column>
-            </el-table>
-        </div>
-
-        <!-- 板块详细统计 -->
-        <div class="panel full-width" style="margin-top: 20px;">
-            <div class="panel-title">📋 板块详细统计</div>
-            <el-table :data="sectorStats" stripe style="width: 100%">
-                <el-table-column prop="sector_name" label="板块名称" width="150" fixed />
-                <el-table-column prop="limit_up_count" label="涨停" width="80" sortable>
-                    <template #default="scope">
-                        <el-tag type="danger">{{ scope.row.limit_up_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="one_word_count" label="一字板" width="80" sortable />
-                <el-table-column prop="broken_count" label="炸板" width="80" sortable>
-                    <template #default="scope">
-                        <el-tag type="warning">{{ scope.row.broken_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="broken_resealed_count" label="回封" width="80" sortable>
-                    <template #default="scope">
-                        <el-tag type="success">{{ scope.row.broken_resealed_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="broken_not_resealed_count" label="未回封" width="100" sortable>
-                    <template #default="scope">
-                        <el-tag type="info">{{ scope.row.broken_not_resealed_count }}</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column label="连板分布" width="200">
-                    <template #default="scope">
-                        2连:{{ scope.row.consecutive_2_count }}
-                        3连:{{ scope.row.consecutive_3_count }}
-                        4连:{{ scope.row.consecutive_4_count }}
-                        5+:{{ scope.row.consecutive_5_plus_count }}
-                    </template>
-                </el-table-column>
-                <el-table-column prop="avg_change_pct" label="平均涨幅" width="100" sortable>
-                    <template #default="scope">
-                        <span :style="{color: scope.row.avg_change_pct > 0 ? '#F56C6C' : '#67C23A'}">
-                            {{ scope.row.avg_change_pct.toFixed(2) }}%
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="total_turnover" label="总成交额" width="120" sortable>
-                    <template #default="scope">
-                        {{ formatMoney(scope.row.total_turnover) }}
-                    </template>
-                </el-table-column>
-                <el-table-column prop="limit_down_count" label="跌停" width="80" sortable>
-                    <template #default="scope">
-                        <el-tag type="success">{{ scope.row.limit_down_count }}</el-tag>
-                    </template>
-                </el-table-column>
-            </el-table>
-        </div>
-
-        <!-- 涨跌停个股列表 -->
-        <div class="panel full-width" style="margin-top: 20px;">
-            <div class="panel-title">💎 涨跌停个股列表</div>
-            <el-table :data="limitStocks" stripe style="width: 100%" max-height="500">
-                <el-table-column prop="stock_name" label="股票名称" width="120" fixed />
-                <el-table-column prop="stock_code" label="代码" width="100" />
-                <el-table-column prop="consecutive_limit_days" label="连板" width="80" sortable>
-                    <template #default="scope">
-                        <el-tag v-if="scope.row.consecutive_limit_days > 0" type="danger">
-                            {{ scope.row.consecutive_limit_days }}连
-                        </el-tag>
-                        <span v-else>-</span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="first_limit_time" label="封板时间" width="100" sortable />
-                <el-table-column prop="change_pct" label="涨跌幅" width="100" sortable>
-                    <template #default="scope">
-                        <span :style="{color: scope.row.change_pct > 0 ? '#F56C6C' : '#67C23A', fontWeight: 'bold'}">
-                            {{ scope.row.change_pct.toFixed(2) }}%
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column label="标记" width="150">
-                    <template #default="scope">
-                        <el-tag v-if="scope.row.is_one_word" type="danger" size="small">一字板</el-tag>
-                        <el-tag v-if="scope.row.is_broken && scope.row.is_resealed" type="warning" size="small" style="margin-left: 5px">炸板回封</el-tag>
-                        <el-tag v-if="scope.row.is_broken && !scope.row.is_resealed" type="info" size="small" style="margin-left: 5px">炸板未封</el-tag>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="seal_amount" label="封单量(手)" width="120" sortable>
-                    <template #default="scope">
-                        {{ formatNumber(scope.row.seal_amount) }}
-                    </template>
-                </el-table-column>
-                <el-table-column prop="turnover_rate" label="换手率" width="100" sortable>
-                    <template #default="scope">
-                        {{ scope.row.turnover_rate.toFixed(2) }}%
-                    </template>
-                </el-table-column>
-                <el-table-column prop="turnover" label="成交额" width="120" sortable>
-                    <template #default="scope">
-                        {{ formatMoney(scope.row.turnover) }}
+                <el-table-column prop="limit_up_count" label="涨停数" width="90"></el-table-column>
+                <el-table-column prop="one_word_count" label="一字板" width="90"></el-table-column>
+                <el-table-column label="平均涨幅%" width="110">
+                    <template v-slot="scope">
+                        <span class="red">{{ safeFixed(scope.row.avg_change_pct, 2) }}%</span>
                     </template>
                 </el-table-column>
             </el-table>
         </div>
     </div>
 
-    <!-- Vue 3 -->
-    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
-    <!-- Element Plus -->
+    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.js"></script>
     <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"></script>
-    <!-- Element Plus Icons -->
-    <script src="https://unpkg.com/@element-plus/icons-vue@2.1.0/dist/index.iife.min.js"></script>
 
     <script>
         const { createApp } = Vue;
-        const ElementPlus = window['element-plus'];
-
         const app = createApp({
             data() {
                 return {
-                    selectedDate: new Date().toISOString().split('T')[0],
-                    selectedSector: '',
-                    limitType: '',
-
-                    sectors: [],
+                    selectedDate: '2025-12-30',
                     sectorStats: [],
                     sectorStrength: [],
-                    limitStocks: [],
-                    ladder: [],
-
                     totalLimitUp: 0,
                     totalLimitDown: 0,
                     totalOneWord: 0,
                     totalBroken: 0,
-
-                    sectorChart: null,
+                    chart: null
                 };
             },
             mounted() {
-                console.log('Vue应用已挂载，开始加载数据...');
-                this.loadSectors();
+                console.log('✅ Vue 应用已挂载');
                 this.loadData();
             },
-            errorCaptured(err, instance, info) {
-                console.error('Vue组件错误:', err, info);
-                ElementPlus.ElMessage.error('页面渲染出错: ' + err.message);
-                return false;
-            },
             methods: {
-                async loadSectors() {
-                    try {
-                        const response = await fetch('/api/v1/sectors');
-                        const result = await response.json();
-                        if (result.code === 200) {
-                            this.sectors = result.data || [];
-                        }
-                    } catch (error) {
-                        console.error('加载板块失败:', error);
-                        ElementPlus.ElMessage.error('加载板块失败');
-                    }
-                },
-
                 async loadData() {
-                    await Promise.all([
-                        this.loadSectorStats(),
-                        this.loadLimitStats(),
-                        this.loadConsecutiveLadder(),
-                        this.loadSectorStrength(),
-                    ]);
+                    console.log('🔄 开始加载数据...');
+                    try {
+                        await this.loadSectorStats();
+                        await this.loadSectorStrength();
+                        this.renderChart();
+                    } catch (error) {
+                        console.error('❌ 加载数据失败:', error);
+                        window['element-plus'].ElMessage.error('加载数据失败');
+                    }
                 },
 
                 async loadSectorStats() {
-                    try {
-                        const url = `/api/v1/sectors/stats?date=${this.selectedDate}`;
-                        console.log('加载板块统计:', url);
-                        const response = await fetch(url);
-                        const result = await response.json();
-                        console.log('板块统计结果:', result);
+                    const response = await fetch(`/api/v1/sectors/stats?date=${this.selectedDate}`);
+                    const result = await response.json();
+                    console.log('📊 板块统计:', result);
 
-                        if (result.code === 200) {
-                            this.sectorStats = result.data || [];
-                            console.log('板块统计数据:', this.sectorStats.length, '条');
-                            this.calculateTotals();
-                            this.renderSectorChart();
-                        } else {
-                            console.warn('板块统计返回异常:', result);
-                        }
-                    } catch (error) {
-                        console.error('加载板块统计失败:', error);
-                        ElementPlus.ElMessage.error('加载板块统计失败: ' + error.message);
-                    }
-                },
-
-                async loadLimitStats() {
-                    try {
-                        let url = `/api/v1/limit-stats?date=${this.selectedDate}`;
-                        if (this.limitType) url += `&type=${this.limitType}`;
-                        if (this.selectedSector) url += `&sector_id=${this.selectedSector}`;
-
-                        const response = await fetch(url);
-                        const result = await response.json();
-                        if (result.code === 200) {
-                            this.limitStocks = result.data || [];
-                        }
-                    } catch (error) {
-                        console.error('加载涨跌停数据失败:', error);
-                    }
-                },
-
-                async loadConsecutiveLadder() {
-                    try {
-                        const response = await fetch('/api/v1/consecutive-ladder?min_days=2');
-                        const result = await response.json();
-                        if (result.code === 200) {
-                            this.ladder = result.data || [];
-                        }
-                    } catch (error) {
-                        console.error('加载连板天梯失败:', error);
+                    if (result.code === 200 && Array.isArray(result.data)) {
+                        this.sectorStats = result.data;
+                        this.totalLimitUp = this.sectorStats.reduce((s, v) => s + (v.limit_up_count || 0), 0);
+                        this.totalLimitDown = this.sectorStats.reduce((s, v) => s + (v.limit_down_count || 0), 0);
+                        this.totalOneWord = this.sectorStats.reduce((s, v) => s + (v.one_word_count || 0), 0);
+                        this.totalBroken = this.sectorStats.reduce((s, v) => s + (v.broken_count || 0), 0);
                     }
                 },
 
                 async loadSectorStrength() {
-                    try {
-                        const url = `/api/v1/sector-strength?date=${this.selectedDate}&limit=30`;
-                        console.log('加载板块强度排行:', url);
-                        const response = await fetch(url);
-                        const result = await response.json();
-                        console.log('板块强度排行结果:', result);
+                    const response = await fetch(`/api/v1/sector-strength?date=${this.selectedDate}&limit=20`);
+                    const result = await response.json();
+                    console.log('🔥 板块强度:', result);
 
-                        if (result.code === 200) {
-                            this.sectorStrength = result.data || [];
-                            console.log('板块强度排行数据:', this.sectorStrength.length, '条');
-                        } else {
-                            console.warn('板块强度排行返回异常:', result);
-                        }
-                    } catch (error) {
-                        console.error('加载板块强度排行失败:', error);
-                        ElementPlus.ElMessage.error('加载板块强度排行失败: ' + error.message);
+                    if (result.code === 200 && Array.isArray(result.data)) {
+                        this.sectorStrength = result.data;
                     }
                 },
 
-                calculateTotals() {
-                    this.totalLimitUp = this.sectorStats.reduce((sum, s) => sum + s.limit_up_count, 0);
-                    this.totalLimitDown = this.sectorStats.reduce((sum, s) => sum + s.limit_down_count, 0);
-                    this.totalOneWord = this.sectorStats.reduce((sum, s) => sum + s.one_word_count, 0);
-                    this.totalBroken = this.sectorStats.reduce((sum, s) => sum + s.broken_count, 0);
-                },
+                renderChart() {
+                    if (!this.sectorStats || this.sectorStats.length === 0) return;
 
-                renderSectorChart() {
-                    // 防止数据为空时初始化失败
-                    if (!this.sectorStats || this.sectorStats.length === 0) {
-                        console.log('没有板块数据，跳过图表渲染');
-                        return;
+                    if (!this.chart) {
+                        this.chart = echarts.init(document.getElementById('chart'));
                     }
 
-                    try {
-                        if (!this.sectorChart) {
-                            const chartDom = document.getElementById('sectorChart');
-                            if (!chartDom) {
-                                console.error('找不到图表容器元素');
-                                return;
-                            }
-                            this.sectorChart = echarts.init(chartDom);
-                        }
-
-                        const top10 = this.sectorStats.slice(0, 10);
-
-                        const option = {
-                            tooltip: {
-                                trigger: 'axis',
-                                axisPointer: { type: 'shadow' }
-                            },
-                            legend: {
-                                data: ['涨停', '一字板', '炸板', '回封']
-                            },
-                            grid: {
-                                left: '3%',
-                                right: '4%',
-                                bottom: '3%',
-                                containLabel: true
-                            },
-                            xAxis: {
-                                type: 'value'
-                            },
-                            yAxis: {
-                                type: 'category',
-                                data: top10.map(s => s.sector_name)
-                            },
-                            series: [
-                                {
-                                    name: '涨停',
-                                    type: 'bar',
-                                    data: top10.map(s => s.limit_up_count),
-                                    itemStyle: { color: '#F56C6C' }
-                                },
-                                {
-                                    name: '一字板',
-                                    type: 'bar',
-                                    data: top10.map(s => s.one_word_count),
-                                    itemStyle: { color: '#E6A23C' }
-                                },
-                                {
-                                    name: '炸板',
-                                    type: 'bar',
-                                    data: top10.map(s => s.broken_count),
-                                    itemStyle: { color: '#909399' }
-                                },
-                                {
-                                    name: '回封',
-                                    type: 'bar',
-                                    data: top10.map(s => s.broken_resealed_count),
-                                    itemStyle: { color: '#67C23A' }
-                                }
-                            ]
-                        };
-
-                        this.sectorChart.setOption(option);
-                    } catch (error) {
-                        console.error('图表渲染失败:', error);
-                    }
+                    const top10 = this.sectorStats.slice(0, 10);
+                    const option = {
+                        tooltip: { trigger: 'axis' },
+                        legend: { data: ['涨停', '一字板', '炸板'] },
+                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
+                        xAxis: { type: 'value' },
+                        yAxis: { type: 'category', data: top10.map(s => s.sector_name || '') },
+                        series: [
+                            { name: '涨停', type: 'bar', data: top10.map(s => s.limit_up_count || 0), itemStyle: { color: '#F56C6C' } },
+                            { name: '一字板', type: 'bar', data: top10.map(s => s.one_word_count || 0), itemStyle: { color: '#E6A23C' } },
+                            { name: '炸板', type: 'bar', data: top10.map(s => s.broken_count || 0), itemStyle: { color: '#909399' } }
+                        ]
+                    };
+                    this.chart.setOption(option);
+                    console.log('✅ 图表渲染成功');
                 },
 
-                getRankClass(index) {
-                    if (index === 0) return 'gold';
-                    if (index === 1) return 'silver';
-                    if (index === 2) return 'bronze';
-                    return 'normal';
-                },
-
-                formatNumber(num) {
-                    if (!num) return '0';
-                    if (num >= 10000) return (num / 10000).toFixed(1) + '万';
-                    return num.toLocaleString();
-                },
-
-                formatMoney(amount) {
-                    if (!amount) return '0';
-                    if (amount >= 100000000) return (amount / 100000000).toFixed(2) + '亿';
-                    if (amount >= 10000) return (amount / 10000).toFixed(2) + '万';
-                    return amount.toFixed(2);
-                },
-
-                goToYangjia() {
-                    window.location.href = '/static/yangjia.html';
+                safeFixed(value, digits) {
+                    if (value == null || value === undefined || isNaN(value)) return '-';
+                    return Number(value).toFixed(digits);
                 }
             }
         });
 
-        // 全局错误处理
-        app.config.errorHandler = (err, instance, info) => {
-            console.error('Vue全局错误:', err);
-            console.error('错误信息:', info);
-            console.error('错误堆栈:', err.stack);
+        app.config.errorHandler = (err) => {
+            console.error('❌ Vue 错误:', err);
         };
 
-        // 全局警告处理
-        app.config.warnHandler = (msg, instance, trace) => {
-            console.warn('Vue警告:', msg);
-            console.warn('组件树:', trace);
-        };
-
-        try {
-            app.use(ElementPlus);
-            const vm = app.mount('#app');
-            console.log('✅ Vue应用挂载成功');
-        } catch (error) {
-            console.error('❌ Vue应用挂载失败:', error);
-            document.body.innerHTML = `
-                <div style="padding: 40px; text-align: center; color: white;">
-                    <h1>⚠️ 页面加载失败</h1>
-                    <p style="margin: 20px 0;">应用初始化出错，请检查浏览器控制台。</p>
-                    <pre style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 8px; text-align: left; max-width: 800px; margin: 0 auto; overflow: auto;">
-${error.message}
-
-${error.stack}
-                    </pre>
-                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 30px; font-size: 16px; cursor: pointer;">
-                        🔄 重新加载页面
-                    </button>
-                </div>
-            `;
-        }
+        app.use(window['element-plus']);
+        app.mount('#app');
+        console.log('🎉 应用启动成功');
     </script>
 </body>
 </html>
