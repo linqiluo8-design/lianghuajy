@@ -324,6 +324,88 @@
             </div>
         </div>
 
+        <!-- 板块强度排行 -->
+        <div class="panel full-width" style="margin-top: 20px;">
+            <div class="panel-title">🔥 板块强度排行</div>
+            <el-table :data="sectorStrength" stripe style="width: 100%" max-height="400">
+                <el-table-column type="index" label="排名" width="60" fixed />
+                <el-table-column prop="sector_name" label="板块名称" width="120" fixed>
+                    <template #default="scope">
+                        <strong>{{ scope.row.sector_name }}</strong>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="strength_grade" label="强度等级" width="90" sortable>
+                    <template #default="scope">
+                        <el-tag
+                            :type="scope.row.strength_grade === 'S' ? 'danger' :
+                                   scope.row.strength_grade === 'A+' ? 'danger' :
+                                   scope.row.strength_grade === 'A' ? 'warning' :
+                                   scope.row.strength_grade === 'B' ? 'info' : ''"
+                            size="large"
+                            effect="dark"
+                            style="font-weight: bold; font-size: 14px;">
+                            {{ scope.row.strength_grade }}
+                        </el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="strength_score" label="强度分数" width="110" sortable>
+                    <template #default="scope">
+                        <span style="color: #E6A23C; font-weight: bold; font-size: 16px;">
+                            {{ scope.row.strength_score.toFixed(1) }}
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="limit_up_count" label="涨停数" width="90" sortable>
+                    <template #default="scope">
+                        <el-tag type="danger" size="large">{{ scope.row.limit_up_count }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="one_word_count" label="一字板" width="90" sortable>
+                    <template #default="scope">
+                        <el-tag type="danger" effect="dark">{{ scope.row.one_word_count }}</el-tag>
+                    </template>
+                </el-table-column>
+                <el-table-column label="连板分布" width="180">
+                    <template #default="scope">
+                        <span style="font-size: 12px;">
+                            2连:<strong>{{ scope.row.consecutive_2_count }}</strong>
+                            3连:<strong style="color: #E6A23C;">{{ scope.row.consecutive_3_count }}</strong>
+                            4连:<strong style="color: #F56C6C;">{{ scope.row.consecutive_4_count }}</strong>
+                            5+:<strong style="color: #F56C6C;">{{ scope.row.consecutive_5_plus_count }}</strong>
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="health_rate" label="健康度%" width="100" sortable>
+                    <template #default="scope">
+                        <span :style="{color: scope.row.health_rate >= 80 ? '#67C23A' :
+                                            scope.row.health_rate >= 60 ? '#E6A23C' : '#F56C6C'}">
+                            {{ scope.row.health_rate.toFixed(0) }}%
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="high_consecutive_rate" label="高连板率%" width="110" sortable>
+                    <template #default="scope">
+                        <span :style="{color: scope.row.high_consecutive_rate >= 30 ? '#F56C6C' :
+                                            scope.row.high_consecutive_rate >= 15 ? '#E6A23C' : '#909399'}">
+                            {{ scope.row.high_consecutive_rate.toFixed(0) }}%
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="avg_change_pct" label="平均涨幅%" width="110" sortable>
+                    <template #default="scope">
+                        <span style="color: #F56C6C; font-weight: bold;">
+                            {{ scope.row.avg_change_pct.toFixed(2) }}%
+                        </span>
+                    </template>
+                </el-table-column>
+                <el-table-column prop="total_turnover" label="总成交额" width="120" sortable>
+                    <template #default="scope">
+                        {{ formatMoney(scope.row.total_turnover) }}
+                    </template>
+                </el-table-column>
+            </el-table>
+        </div>
+
         <!-- 板块详细统计 -->
         <div class="panel full-width" style="margin-top: 20px;">
             <div class="panel-title">📋 板块详细统计</div>
@@ -446,6 +528,7 @@
 
                     sectors: [],
                     sectorStats: [],
+                    sectorStrength: [],
                     limitStocks: [],
                     ladder: [],
 
@@ -480,6 +563,7 @@
                         this.loadSectorStats(),
                         this.loadLimitStats(),
                         this.loadConsecutiveLadder(),
+                        this.loadSectorStrength(),
                     ]);
                 },
 
@@ -523,6 +607,19 @@
                         }
                     } catch (error) {
                         console.error('加载连板天梯失败:', error);
+                    }
+                },
+
+                async loadSectorStrength() {
+                    try {
+                        const url = `/api/v1/sector-strength?date=${this.selectedDate}&limit=30`;
+                        const response = await fetch(url);
+                        const result = await response.json();
+                        if (result.code === 200) {
+                            this.sectorStrength = result.data || [];
+                        }
+                    } catch (error) {
+                        console.error('加载板块强度排行失败:', error);
                     }
                 },
 

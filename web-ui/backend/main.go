@@ -99,6 +99,31 @@ type ConsecutiveLadder struct {
 	BrokenCount      int      `json:"broken_count"`
 }
 
+// SectorStrength 板块强度排行
+type SectorStrength struct {
+	TradeDate               string  `json:"trade_date"`
+	SectorID                int     `json:"sector_id"`
+	SectorCode              string  `json:"sector_code"`
+	SectorName              string  `json:"sector_name"`
+	SectorType              string  `json:"sector_type"`
+	LimitUpCount            int     `json:"limit_up_count"`
+	OneWordCount            int     `json:"one_word_count"`
+	BrokenCount             int     `json:"broken_count"`
+	BrokenResealedCount     int     `json:"broken_resealed_count"`
+	BrokenNotResealedCount  int     `json:"broken_not_resealed_count"`
+	Consecutive2Count       int     `json:"consecutive_2_count"`
+	Consecutive3Count       int     `json:"consecutive_3_count"`
+	Consecutive4Count       int     `json:"consecutive_4_count"`
+	Consecutive5PlusCount   int     `json:"consecutive_5_plus_count"`
+	TotalStocks             int     `json:"total_stocks"`
+	AvgChangePct            float64 `json:"avg_change_pct"`
+	TotalTurnover           float64 `json:"total_turnover"`
+	StrengthScore           float64 `json:"strength_score"`
+	HealthRate              float64 `json:"health_rate"`
+	HighConsecutiveRate     float64 `json:"high_consecutive_rate"`
+	StrengthGrade           string  `json:"strength_grade"`
+}
+
 // APIResponse 统一响应格式
 type APIResponse struct {
 	Code    int         `json:"code"`
@@ -420,6 +445,69 @@ func getConsecutiveLadder(c *gin.Context) {
 		Code:    200,
 		Message: "success",
 		Data:    ladder,
+	})
+}
+
+// getSectorStrength 获取板块强度排行
+func getSectorStrength(c *gin.Context) {
+	date := c.Query("date")
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	minStrength := c.DefaultQuery("min_strength", "0")
+	limit := c.DefaultQuery("limit", "50")
+
+	query := `
+		SELECT
+			trade_date, sector_id, sector_code, sector_name, sector_type,
+			limit_up_count, one_word_count, broken_count,
+			broken_resealed_count, broken_not_resealed_count,
+			consecutive_2_count, consecutive_3_count,
+			consecutive_4_count, consecutive_5_plus_count,
+			total_stocks, avg_change_pct, total_turnover,
+			strength_score, health_rate, high_consecutive_rate, strength_grade
+		FROM v_sector_strength_ranking
+		WHERE trade_date = $1
+		  AND strength_score >= $2
+		ORDER BY strength_score DESC, limit_up_count DESC
+		LIMIT $3
+	`
+
+	rows, err := db.Query(query, date, minStrength, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	strengths := []SectorStrength{}
+	for rows.Next() {
+		var s SectorStrength
+		err := rows.Scan(
+			&s.TradeDate, &s.SectorID, &s.SectorCode, &s.SectorName, &s.SectorType,
+			&s.LimitUpCount, &s.OneWordCount, &s.BrokenCount,
+			&s.BrokenResealedCount, &s.BrokenNotResealedCount,
+			&s.Consecutive2Count, &s.Consecutive3Count,
+			&s.Consecutive4Count, &s.Consecutive5PlusCount,
+			&s.TotalStocks, &s.AvgChangePct, &s.TotalTurnover,
+			&s.StrengthScore, &s.HealthRate, &s.HighConsecutiveRate, &s.StrengthGrade,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+		strengths = append(strengths, s)
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data:    strengths,
 	})
 }
 
@@ -846,6 +934,9 @@ func main() {
 
 		// 连板天梯
 		api.GET("/consecutive-ladder", getConsecutiveLadder)
+
+		// 板块强度排行
+		api.GET("/sector-strength", getSectorStrength)
 
 		// 炒股养家心法
 		api.POST("/yangjia/run-selector", runYangjiaSelector)
