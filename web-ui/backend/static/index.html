@@ -541,8 +541,14 @@
                 };
             },
             mounted() {
+                console.log('Vue应用已挂载，开始加载数据...');
                 this.loadSectors();
                 this.loadData();
+            },
+            errorCaptured(err, instance, info) {
+                console.error('Vue组件错误:', err, info);
+                ElementPlus.ElMessage.error('页面渲染出错: ' + err.message);
+                return false;
             },
             methods: {
                 async loadSectors() {
@@ -570,15 +576,22 @@
                 async loadSectorStats() {
                     try {
                         const url = `/api/v1/sectors/stats?date=${this.selectedDate}`;
+                        console.log('加载板块统计:', url);
                         const response = await fetch(url);
                         const result = await response.json();
+                        console.log('板块统计结果:', result);
+
                         if (result.code === 200) {
                             this.sectorStats = result.data || [];
+                            console.log('板块统计数据:', this.sectorStats.length, '条');
                             this.calculateTotals();
                             this.renderSectorChart();
+                        } else {
+                            console.warn('板块统计返回异常:', result);
                         }
                     } catch (error) {
                         console.error('加载板块统计失败:', error);
+                        ElementPlus.ElMessage.error('加载板块统计失败: ' + error.message);
                     }
                 },
 
@@ -613,13 +626,20 @@
                 async loadSectorStrength() {
                     try {
                         const url = `/api/v1/sector-strength?date=${this.selectedDate}&limit=30`;
+                        console.log('加载板块强度排行:', url);
                         const response = await fetch(url);
                         const result = await response.json();
+                        console.log('板块强度排行结果:', result);
+
                         if (result.code === 200) {
                             this.sectorStrength = result.data || [];
+                            console.log('板块强度排行数据:', this.sectorStrength.length, '条');
+                        } else {
+                            console.warn('板块强度排行返回异常:', result);
                         }
                     } catch (error) {
                         console.error('加载板块强度排行失败:', error);
+                        ElementPlus.ElMessage.error('加载板块强度排行失败: ' + error.message);
                     }
                 },
 
@@ -631,62 +651,77 @@
                 },
 
                 renderSectorChart() {
-                    if (!this.sectorChart) {
-                        this.sectorChart = echarts.init(document.getElementById('sectorChart'));
+                    // 防止数据为空时初始化失败
+                    if (!this.sectorStats || this.sectorStats.length === 0) {
+                        console.log('没有板块数据，跳过图表渲染');
+                        return;
                     }
 
-                    const top10 = this.sectorStats.slice(0, 10);
-
-                    const option = {
-                        tooltip: {
-                            trigger: 'axis',
-                            axisPointer: { type: 'shadow' }
-                        },
-                        legend: {
-                            data: ['涨停', '一字板', '炸板', '回封']
-                        },
-                        grid: {
-                            left: '3%',
-                            right: '4%',
-                            bottom: '3%',
-                            containLabel: true
-                        },
-                        xAxis: {
-                            type: 'value'
-                        },
-                        yAxis: {
-                            type: 'category',
-                            data: top10.map(s => s.sector_name)
-                        },
-                        series: [
-                            {
-                                name: '涨停',
-                                type: 'bar',
-                                data: top10.map(s => s.limit_up_count),
-                                itemStyle: { color: '#F56C6C' }
-                            },
-                            {
-                                name: '一字板',
-                                type: 'bar',
-                                data: top10.map(s => s.one_word_count),
-                                itemStyle: { color: '#E6A23C' }
-                            },
-                            {
-                                name: '炸板',
-                                type: 'bar',
-                                data: top10.map(s => s.broken_count),
-                                itemStyle: { color: '#909399' }
-                            },
-                            {
-                                name: '回封',
-                                type: 'bar',
-                                data: top10.map(s => s.broken_resealed_count),
-                                itemStyle: { color: '#67C23A' }
+                    try {
+                        if (!this.sectorChart) {
+                            const chartDom = document.getElementById('sectorChart');
+                            if (!chartDom) {
+                                console.error('找不到图表容器元素');
+                                return;
                             }
-                        ]
-                    };
+                            this.sectorChart = echarts.init(chartDom);
+                        }
 
-                    this.sectorChart.setOption(option);
+                        const top10 = this.sectorStats.slice(0, 10);
+
+                        const option = {
+                            tooltip: {
+                                trigger: 'axis',
+                                axisPointer: { type: 'shadow' }
+                            },
+                            legend: {
+                                data: ['涨停', '一字板', '炸板', '回封']
+                            },
+                            grid: {
+                                left: '3%',
+                                right: '4%',
+                                bottom: '3%',
+                                containLabel: true
+                            },
+                            xAxis: {
+                                type: 'value'
+                            },
+                            yAxis: {
+                                type: 'category',
+                                data: top10.map(s => s.sector_name)
+                            },
+                            series: [
+                                {
+                                    name: '涨停',
+                                    type: 'bar',
+                                    data: top10.map(s => s.limit_up_count),
+                                    itemStyle: { color: '#F56C6C' }
+                                },
+                                {
+                                    name: '一字板',
+                                    type: 'bar',
+                                    data: top10.map(s => s.one_word_count),
+                                    itemStyle: { color: '#E6A23C' }
+                                },
+                                {
+                                    name: '炸板',
+                                    type: 'bar',
+                                    data: top10.map(s => s.broken_count),
+                                    itemStyle: { color: '#909399' }
+                                },
+                                {
+                                    name: '回封',
+                                    type: 'bar',
+                                    data: top10.map(s => s.broken_resealed_count),
+                                    itemStyle: { color: '#67C23A' }
+                                }
+                            ]
+                        };
+
+                        this.sectorChart.setOption(option);
+                    } catch (error) {
+                        console.error('图表渲染失败:', error);
+                    }
                 },
 
                 getRankClass(index) {
@@ -715,8 +750,40 @@
             }
         });
 
-        app.use(ElementPlus);
-        app.mount('#app');
+        // 全局错误处理
+        app.config.errorHandler = (err, instance, info) => {
+            console.error('Vue全局错误:', err);
+            console.error('错误信息:', info);
+            console.error('错误堆栈:', err.stack);
+        };
+
+        // 全局警告处理
+        app.config.warnHandler = (msg, instance, trace) => {
+            console.warn('Vue警告:', msg);
+            console.warn('组件树:', trace);
+        };
+
+        try {
+            app.use(ElementPlus);
+            const vm = app.mount('#app');
+            console.log('✅ Vue应用挂载成功');
+        } catch (error) {
+            console.error('❌ Vue应用挂载失败:', error);
+            document.body.innerHTML = `
+                <div style="padding: 40px; text-align: center; color: white;">
+                    <h1>⚠️ 页面加载失败</h1>
+                    <p style="margin: 20px 0;">应用初始化出错，请检查浏览器控制台。</p>
+                    <pre style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 8px; text-align: left; max-width: 800px; margin: 0 auto; overflow: auto;">
+${error.message}
+
+${error.stack}
+                    </pre>
+                    <button onclick="location.reload()" style="margin-top: 20px; padding: 10px 30px; font-size: 16px; cursor: pointer;">
+                        🔄 重新加载页面
+                    </button>
+                </div>
+            `;
+        }
     </script>
 </body>
 </html>
