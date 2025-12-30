@@ -6,3 +6,4 @@ __pycache__
 
 # 环境变量文件（包含敏感信息）
 .env
+web-ui/backend/static/index.html.backup
