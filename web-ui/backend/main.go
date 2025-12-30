@@ -28,7 +28,7 @@ type Sector struct {
 	SectorName  string    `json:"sector_name"`
 	SectorType  string    `json:"sector_type"`
 	StockCount  int       `json:"stock_count"`
-	Description string    `json:"description"`
+	Description *string   `json:"description"` // 使用指针处理NULL值
 	IsActive    bool      `json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
 }

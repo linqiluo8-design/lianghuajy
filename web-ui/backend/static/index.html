@@ -5,15 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Funcat 涨跌停数据看板</title>
 
-    <!-- Element Plus CSS - 本地优先，CDN备用 -->
-    <link rel="stylesheet" href="/static/libs/element-plus/index.css" onerror="this.onerror=null;this.href='https://unpkg.com/element-plus@2.4.4/dist/index.css'">
+    <!-- Element Plus CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
 
-    <!-- ECharts - 本地优先 -->
-    <script src="/static/libs/echarts/echarts.min.js"></script>
-    <!-- ECharts CDN 备用 -->
-    <script>
-        window.echarts || document.write('<script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"><\/script>');
-    </script>
+    <!-- ECharts -->
+    <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
 
     <style>
         * {
@@ -430,17 +426,12 @@
         </div>
     </div>
 
-    <!-- Vue 3 - 本地优先 -->
-    <script src="/static/libs/vue/vue.global.prod.js"></script>
-    <script>window.Vue || document.write('<script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"><\/script>');</script>
-
-    <!-- Element Plus - 本地优先 -->
-    <script src="/static/libs/element-plus/index.full.js"></script>
-    <script>window['element-plus'] || document.write('<script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"><\/script>');</script>
-
-    <!-- Element Plus Icons - 本地优先 -->
-    <script src="/static/libs/element-plus/icons.iife.min.js"></script>
-    <script>window['ElementPlusIconsVue'] || document.write('<script src="https://unpkg.com/@element-plus/icons-vue@2.1.0/dist/index.iife.min.js"><\/script>');</script>
+    <!-- Vue 3 -->
+    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.prod.js"></script>
+    <!-- Element Plus -->
+    <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"></script>
+    <!-- Element Plus Icons -->
+    <script src="https://unpkg.com/@element-plus/icons-vue@2.1.0/dist/index.iife.min.js"></script>
 
     <script>
         const { createApp } = Vue;

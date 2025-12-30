@@ -11,14 +11,11 @@ WORKDIR /build
 ENV GOPROXY=https://goproxy.cn,direct
 ENV GO111MODULE=on
 
-# 安装依赖（包括wget用于下载CDN资源）
-RUN apk add --no-cache git wget
+# 安装依赖
+RUN apk add --no-cache git
 
 # 复制所有源代码（go mod tidy 需要分析源码）
 COPY . .
-
-# 下载CDN资源到本地
-RUN chmod +x download-cdn.sh && ./download-cdn.sh
 
 # 生成 go.sum 并下载依赖
 RUN go mod tidy && go mod download
