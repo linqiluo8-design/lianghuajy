@@ -14,11 +14,14 @@ ENV GO111MODULE=on
 # 安装依赖
 RUN apk add --no-cache git
 
-# 复制所有源代码（go mod tidy 需要分析源码）
-COPY . .
+# 先复制 go.mod 和 go.sum（利用 Docker 缓存）
+COPY go.mod go.sum ./
 
-# 生成 go.sum 并下载依赖
-RUN go mod tidy && go mod download
+# 下载依赖（这一层会被缓存，除非 go.mod/go.sum 改变）
+RUN go mod download
+
+# 再复制源代码（修改代码不会导致依赖重新下载）
+COPY . .
 
 # 编译
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o funcat-web-ui .
