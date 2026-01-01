@@ -131,6 +131,14 @@
             </div>
         </div>
 
+        <!-- 最高连板数趋势图 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">📈 最高连板数趋势（近30天）</h5>
+                <div id="highestBoardChart" style="width: 100%; height: 350px;"></div>
+            </div>
+        </div>
+
         <!-- 板块强度排行 -->
         <div class="card mb-4">
             <div class="card-body">
@@ -240,7 +248,8 @@
             try {
                 await Promise.all([
                     loadSectorStats(),
-                    loadSectorStrength()
+                    loadSectorStrength(),
+                    loadHighestBoardTrend()
                 ]);
             } catch (error) {
                 console.error('加载数据失败:', error);
@@ -288,6 +297,19 @@
             }
 
             renderStrengthTable(result.data);
+        }
+
+        // 加载最高连板数趋势
+        async function loadHighestBoardTrend() {
+            const response = await fetch('/api/v1/daily-highest-board?days=30');
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('最高连板数数据异常:', result);
+                return;
+            }
+
+            renderHighestBoardChart(result.data);
         }
 
         // 渲染图表
@@ -342,6 +364,103 @@
             };
 
             chart.setOption(option);
+        }
+
+        // 渲染最高连板数趋势图
+        function renderHighestBoardChart(data) {
+            if (!data || data.length === 0) return;
+
+            const highestBoardChart = echarts.init(document.getElementById('highestBoardChart'));
+
+            const dates = data.map(item => item.trade_date.substring(5)); // 只显示月-日
+            const highestBoards = data.map(item => item.highest_board || 0);
+            const totalLimitUp = data.map(item => item.total_limit_up_count || 0);
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        let result = params[0].name + '<br/>';
+                        params.forEach(param => {
+                            result += `${param.marker}${param.seriesName}: ${param.value}<br/>`;
+                        });
+                        return result;
+                    }
+                },
+                legend: {
+                    data: ['最高连板数', '涨停总数']
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '10%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: dates,
+                    axisLabel: {
+                        rotate: 45,
+                        interval: Math.floor(dates.length / 10) // 自适应显示间隔
+                    }
+                },
+                yAxis: [
+                    {
+                        type: 'value',
+                        name: '连板数',
+                        position: 'left',
+                        axisLabel: {
+                            formatter: '{value}'
+                        }
+                    },
+                    {
+                        type: 'value',
+                        name: '涨停总数',
+                        position: 'right',
+                        axisLabel: {
+                            formatter: '{value}'
+                        }
+                    }
+                ],
+                series: [
+                    {
+                        name: '最高连板数',
+                        type: 'line',
+                        yAxisIndex: 0,
+                        data: highestBoards,
+                        smooth: true,
+                        itemStyle: { color: '#dc3545' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(220, 53, 69, 0.3)' },
+                                { offset: 1, color: 'rgba(220, 53, 69, 0.05)' }
+                            ])
+                        },
+                        emphasis: {
+                            focus: 'series'
+                        }
+                    },
+                    {
+                        name: '涨停总数',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: totalLimitUp,
+                        smooth: true,
+                        itemStyle: { color: '#0dcaf0' },
+                        emphasis: {
+                            focus: 'series'
+                        }
+                    }
+                ]
+            };
+
+            highestBoardChart.setOption(option);
+
+            // 窗口大小改变时重绘
+            window.addEventListener('resize', function() {
+                highestBoardChart.resize();
+            });
         }
 
         // 渲染板块强度表格

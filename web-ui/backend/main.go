@@ -164,6 +164,18 @@ type APIResponse struct {
 	Data    interface{} `json:"data"`
 }
 
+// DailyHighestBoard 每日最高连板数统计
+type DailyHighestBoard struct {
+	TradeDate         string `json:"trade_date"`
+	HighestBoard      int    `json:"highest_board"`
+	Board5PlusCount   int    `json:"board_5_plus_count"`
+	Board4Count       int    `json:"board_4_count"`
+	Board3Count       int    `json:"board_3_count"`
+	Board2Count       int    `json:"board_2_count"`
+	TotalLimitUpCount int    `json:"total_limit_up_count"`
+	OneWordCount      int    `json:"one_word_count"`
+}
+
 // YangjiaSelectResult 炒股养家选股结果
 type YangjiaSelectResult struct {
 	ID              int     `json:"id"`
@@ -637,6 +649,69 @@ func getSectorStocks(c *gin.Context) {
 	})
 }
 
+// getDailyHighestBoard 获取每日最高连板数统计
+func getDailyHighestBoard(c *gin.Context) {
+	// 获取查询天数，默认30天
+	days := c.DefaultQuery("days", "30")
+
+	query := `
+		SELECT
+			trade_date,
+			highest_board,
+			board_5_plus_count,
+			board_4_count,
+			board_3_count,
+			board_2_count,
+			total_limit_up_count,
+			one_word_count
+		FROM v_daily_highest_board
+		ORDER BY trade_date DESC
+		LIMIT $1
+	`
+
+	rows, err := db.Query(query, days)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	boards := []DailyHighestBoard{}
+	for rows.Next() {
+		var b DailyHighestBoard
+		err := rows.Scan(
+			&b.TradeDate,
+			&b.HighestBoard,
+			&b.Board5PlusCount,
+			&b.Board4Count,
+			&b.Board3Count,
+			&b.Board2Count,
+			&b.TotalLimitUpCount,
+			&b.OneWordCount,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+		boards = append(boards, b)
+	}
+
+	// 反转数组，使时间从旧到新排列（方便前端图表展示）
+	for i, j := 0, len(boards)-1; i < j; i, j = i+1, j-1 {
+		boards[i], boards[j] = boards[j], boards[i]
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: fmt.Sprintf("查询到%d天数据", len(boards)),
+		Data:    boards,
+	})
+}
+
 // healthCheck 健康检查
 func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -1066,6 +1141,9 @@ func main() {
 
 		// 板块个股详情
 		api.GET("/sector-stocks", getSectorStocks)
+
+		// 每日最高连板数统计
+		api.GET("/daily-highest-board", getDailyHighestBoard)
 
 		// 炒股养家心法
 		api.POST("/yangjia/run-selector", runYangjiaSelector)
