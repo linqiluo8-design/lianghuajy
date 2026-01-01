@@ -82,6 +82,36 @@ type DailyLimitStats struct {
 	CreatedAt            time.Time `json:"created_at"`
 }
 
+// StockLimitDetail 个股涨跌停详情（用于前端展示）
+type StockLimitDetail struct {
+	ID                         int     `json:"id"`
+	TradeDate                  string  `json:"trade_date"`
+	StockCode                  string  `json:"stock_code"`
+	StockName                  string  `json:"stock_name"`
+	SectorID                   *int    `json:"sector_id"`
+	SectorName                 *string `json:"sector_name"`
+	OpenPrice                  float64 `json:"open_price"`
+	ClosePrice                 float64 `json:"close_price"`
+	PreClose                   float64 `json:"pre_close"`
+	ChangePct                  float64 `json:"change_pct"`
+	OpenChangePct              float64 `json:"open_change_pct"`
+	LimitType                  string  `json:"limit_type"`
+	IsOneWord                  bool    `json:"is_one_word"`
+	IsBroken                   bool    `json:"is_broken"`
+	IsResealed                 bool    `json:"is_resealed"`
+	ConsecutiveLimitDays       int     `json:"consecutive_limit_days"`
+	BoardDescription           string  `json:"board_description"`
+	LimitReason                *string `json:"limit_reason"`
+	Industry                   *string `json:"industry"`
+	Volume                     int64   `json:"volume"`
+	Turnover                   float64 `json:"turnover"`
+	TurnoverRate               float64 `json:"turnover_rate"`
+	FirstLimitTime             *string `json:"first_limit_time"`
+	YesterdayAuctionUnmatched  int64   `json:"yesterday_auction_unmatched"`
+	TodayAuctionUnmatched      int64   `json:"today_auction_unmatched"`
+	ConceptTags                *string `json:"concept_tags"`
+}
+
 // ConsecutiveLadder 连板天梯
 type ConsecutiveLadder struct {
 	StockCode        string   `json:"stock_code"`
@@ -518,6 +548,95 @@ func getSectorStrength(c *gin.Context) {
 	})
 }
 
+// getSectorStocks 获取指定板块的个股列表
+func getSectorStocks(c *gin.Context) {
+	date := c.Query("date")
+	if date == "" {
+		date = time.Now().Format("2006-01-02")
+	}
+
+	sectorName := c.Query("sector_name")
+	limitType := c.Query("limit_type") // limit_up, limit_down
+
+	if sectorName == "" {
+		c.JSON(http.StatusBadRequest, APIResponse{
+			Code:    400,
+			Message: "缺少板块名称参数",
+			Data:    nil,
+		})
+		return
+	}
+
+	// 使用视图查询个股详情
+	query := `
+		SELECT
+			id, trade_date, stock_code, stock_name,
+			sector_id, sector_name,
+			open_price, close_price, pre_close,
+			change_pct, open_change_pct,
+			limit_type, is_one_word, is_broken, is_resealed,
+			consecutive_limit_days, board_description,
+			limit_reason, industry,
+			volume, turnover, turnover_rate,
+			first_limit_time,
+			yesterday_auction_unmatched, today_auction_unmatched,
+			concept_tags
+		FROM v_stock_limit_detail
+		WHERE trade_date = $1
+		  AND sector_name = $2
+	`
+
+	args := []interface{}{date, sectorName}
+
+	// 如果指定了涨跌停类型，添加过滤条件
+	if limitType != "" {
+		query += " AND limit_type = $3"
+		args = append(args, limitType)
+	}
+
+	query += " ORDER BY consecutive_limit_days DESC, first_limit_time ASC"
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, APIResponse{
+			Code:    500,
+			Message: "查询失败: " + err.Error(),
+			Data:    nil,
+		})
+		return
+	}
+	defer rows.Close()
+
+	stocks := []StockLimitDetail{}
+	for rows.Next() {
+		var s StockLimitDetail
+		err := rows.Scan(
+			&s.ID, &s.TradeDate, &s.StockCode, &s.StockName,
+			&s.SectorID, &s.SectorName,
+			&s.OpenPrice, &s.ClosePrice, &s.PreClose,
+			&s.ChangePct, &s.OpenChangePct,
+			&s.LimitType, &s.IsOneWord, &s.IsBroken, &s.IsResealed,
+			&s.ConsecutiveLimitDays, &s.BoardDescription,
+			&s.LimitReason, &s.Industry,
+			&s.Volume, &s.Turnover, &s.TurnoverRate,
+			&s.FirstLimitTime,
+			&s.YesterdayAuctionUnmatched, &s.TodayAuctionUnmatched,
+			&s.ConceptTags,
+		)
+		if err != nil {
+			log.Println("扫描错误:", err)
+			continue
+		}
+		stocks = append(stocks, s)
+	}
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: fmt.Sprintf("查询到%d只股票", len(stocks)),
+		Data:    stocks,
+	})
+}
+
 // healthCheck 健康检查
 func healthCheck(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
@@ -944,6 +1063,9 @@ func main() {
 
 		// 板块强度排行
 		api.GET("/sector-strength", getSectorStrength)
+
+		// 板块个股详情
+		api.GET("/sector-stocks", getSectorStocks)
 
 		// 炒股养家心法
 		api.POST("/yangjia/run-selector", runYangjiaSelector)

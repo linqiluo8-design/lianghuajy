@@ -58,6 +58,26 @@
         .badge-A { background-color: #ffc107; }
         .badge-B { background-color: #0dcaf0; }
         .badge-C { background-color: #6c757d; }
+        .clickable-badge {
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .clickable-badge:hover {
+            transform: scale(1.1);
+            opacity: 0.8;
+        }
+        .stock-modal .modal-dialog {
+            max-width: 90%;
+        }
+        .stock-detail-table {
+            font-size: 0.9rem;
+        }
+        .stock-detail-table th {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
     </style>
 </head>
 <body>
@@ -136,6 +156,51 @@
                             </tr>
                         </tbody>
                     </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个股详情模态框 -->
+    <div class="modal fade stock-modal" id="stockModal" tabindex="-1" aria-labelledby="stockModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="stockModalLabel">个股详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div style="max-height: 70vh; overflow-y: auto;">
+                        <table class="table table-bordered table-hover stock-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>代码</th>
+                                    <th>名称</th>
+                                    <th>涨幅%</th>
+                                    <th>开盘涨幅%</th>
+                                    <th>类型</th>
+                                    <th>连板天数</th>
+                                    <th>几天几板</th>
+                                    <th>涨停原因</th>
+                                    <th>所属行业</th>
+                                    <th>换手%</th>
+                                    <th>首次涨停时间</th>
+                                    <th>成交额(亿)</th>
+                                    <th>昨日封单(万)</th>
+                                    <th>今日封单(万)</th>
+                                    <th>概念题材</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockDetailTable">
+                                <tr>
+                                    <td colspan="15" class="text-center text-muted">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
                 </div>
             </div>
         </div>
@@ -327,8 +392,13 @@
                 // 涨停数
                 const limitUpCell = document.createElement('td');
                 const limitUpBadge = document.createElement('span');
-                limitUpBadge.className = 'badge bg-danger fw-bold';
-                limitUpBadge.textContent = item.limit_up_count || 0;
+                const limitUpCount = item.limit_up_count || 0;
+                limitUpBadge.className = limitUpCount > 0 ? 'badge bg-danger fw-bold clickable-badge' : 'badge bg-danger fw-bold';
+                limitUpBadge.textContent = limitUpCount;
+                if (limitUpCount > 0) {
+                    limitUpBadge.title = '点击查看涨停个股';
+                    limitUpBadge.onclick = () => showSectorStocks(item.sector_name, 'limit_up', '涨停');
+                }
                 limitUpCell.appendChild(limitUpBadge);
                 row.appendChild(limitUpCell);
 
@@ -345,8 +415,10 @@
                 const limitDownCount = item.limit_down_count || 0;
                 if (limitDownCount > 0) {
                     const limitDownBadge = document.createElement('span');
-                    limitDownBadge.className = 'badge bg-success fw-bold';
+                    limitDownBadge.className = 'badge bg-success fw-bold clickable-badge';
                     limitDownBadge.textContent = limitDownCount;
+                    limitDownBadge.title = '点击查看跌停个股';
+                    limitDownBadge.onclick = () => showSectorStocks(item.sector_name, 'limit_down', '跌停');
                     limitDownCell.appendChild(limitDownBadge);
                 } else {
                     const limitDownText = document.createElement('span');
@@ -395,6 +467,194 @@
         window.addEventListener('resize', function() {
             if (chart) chart.resize();
         });
+
+        // ============================================
+        // 个股详情功能
+        // ============================================
+
+        let stockModal = null;
+
+        // 显示板块个股详情
+        async function showSectorStocks(sectorName, limitType, typeName) {
+            try {
+                // 初始化模态框（如果还没有初始化）
+                if (!stockModal) {
+                    stockModal = new bootstrap.Modal(document.getElementById('stockModal'));
+                }
+
+                // 更新模态框标题
+                const modalTitle = document.getElementById('stockModalLabel');
+                modalTitle.textContent = `${sectorName} - ${typeName}个股`;
+
+                // 显示加载状态
+                const tbody = document.getElementById('stockDetailTable');
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">加载中...</td></tr>';
+
+                // 打开模态框
+                stockModal.show();
+
+                // 加载数据
+                const url = `/api/v1/sector-stocks?date=${API_DATE}&sector_name=${encodeURIComponent(sectorName)}&limit_type=${limitType}`;
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.code !== 200 || !Array.isArray(result.data)) {
+                    tbody.innerHTML = '<tr><td colspan="15" class="text-center text-danger">加载失败</td></tr>';
+                    console.error('个股数据加载失败:', result);
+                    return;
+                }
+
+                // 渲染数据
+                renderStockDetailTable(result.data);
+            } catch (error) {
+                console.error('加载个股详情失败:', error);
+                const tbody = document.getElementById('stockDetailTable');
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-danger">加载失败</td></tr>';
+            }
+        }
+
+        // 渲染个股详情表格
+        function renderStockDetailTable(stocks) {
+            const tbody = document.getElementById('stockDetailTable');
+            tbody.innerHTML = '';
+
+            if (!stocks || stocks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">暂无数据</td></tr>';
+                return;
+            }
+
+            stocks.forEach(stock => {
+                const row = document.createElement('tr');
+
+                // 代码
+                const codeCell = document.createElement('td');
+                codeCell.textContent = stock.stock_code || '-';
+                row.appendChild(codeCell);
+
+                // 名称
+                const nameCell = document.createElement('td');
+                const nameStrong = document.createElement('strong');
+                nameStrong.textContent = stock.stock_name || '-';
+                nameCell.appendChild(nameStrong);
+                row.appendChild(nameCell);
+
+                // 涨幅%
+                const changePctCell = document.createElement('td');
+                const changePctSpan = document.createElement('span');
+                const changePct = parseFloat(stock.change_pct) || 0;
+                changePctSpan.className = changePct >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                changePctSpan.textContent = safeNumber(stock.change_pct, 2) + '%';
+                changePctCell.appendChild(changePctSpan);
+                row.appendChild(changePctCell);
+
+                // 开盘涨幅%
+                const openChangePctCell = document.createElement('td');
+                const openChangePct = parseFloat(stock.open_change_pct) || 0;
+                const openChangePctSpan = document.createElement('span');
+                openChangePctSpan.className = openChangePct >= 0 ? 'text-danger' : 'text-success';
+                openChangePctSpan.textContent = safeNumber(stock.open_change_pct, 2) + '%';
+                openChangePctCell.appendChild(openChangePctSpan);
+                row.appendChild(openChangePctCell);
+
+                // 类型
+                const typeCell = document.createElement('td');
+                const typeBadge = document.createElement('span');
+                if (stock.limit_type === 'limit_up') {
+                    typeBadge.className = 'badge bg-danger';
+                    typeBadge.textContent = stock.is_one_word ? '一字涨停' : '涨停';
+                } else if (stock.limit_type === 'limit_down') {
+                    typeBadge.className = 'badge bg-success';
+                    typeBadge.textContent = stock.is_one_word ? '一字跌停' : '跌停';
+                } else {
+                    typeBadge.className = 'badge bg-secondary';
+                    typeBadge.textContent = stock.limit_type || '-';
+                }
+                if (stock.is_broken) {
+                    const brokenBadge = document.createElement('span');
+                    brokenBadge.className = 'badge bg-warning ms-1';
+                    brokenBadge.textContent = stock.is_resealed ? '回封' : '炸板';
+                    typeCell.appendChild(typeBadge);
+                    typeCell.appendChild(brokenBadge);
+                } else {
+                    typeCell.appendChild(typeBadge);
+                }
+                row.appendChild(typeCell);
+
+                // 连板天数
+                const consecutiveCell = document.createElement('td');
+                const consecutiveText = document.createElement('strong');
+                consecutiveText.className = stock.consecutive_limit_days >= 3 ? 'text-danger' : '';
+                consecutiveText.textContent = stock.consecutive_limit_days || 1;
+                consecutiveCell.appendChild(consecutiveText);
+                row.appendChild(consecutiveCell);
+
+                // 几天几板
+                const boardCell = document.createElement('td');
+                const boardBadge = document.createElement('span');
+                const days = stock.consecutive_limit_days || 1;
+                if (days >= 5) {
+                    boardBadge.className = 'badge bg-danger';
+                } else if (days >= 3) {
+                    boardBadge.className = 'badge bg-warning';
+                } else {
+                    boardBadge.className = 'badge bg-info';
+                }
+                boardBadge.textContent = stock.board_description || '-';
+                boardCell.appendChild(boardBadge);
+                row.appendChild(boardCell);
+
+                // 涨停原因
+                const reasonCell = document.createElement('td');
+                reasonCell.textContent = stock.limit_reason || '-';
+                reasonCell.style.maxWidth = '200px';
+                reasonCell.style.overflow = 'hidden';
+                reasonCell.style.textOverflow = 'ellipsis';
+                reasonCell.title = stock.limit_reason || '';
+                row.appendChild(reasonCell);
+
+                // 所属行业
+                const industryCell = document.createElement('td');
+                industryCell.textContent = stock.industry || stock.sector_name || '-';
+                row.appendChild(industryCell);
+
+                // 换手%
+                const turnoverRateCell = document.createElement('td');
+                turnoverRateCell.textContent = safeNumber(stock.turnover_rate, 2) + '%';
+                row.appendChild(turnoverRateCell);
+
+                // 首次涨停时间
+                const firstLimitTimeCell = document.createElement('td');
+                const timeText = stock.first_limit_time || '-';
+                firstLimitTimeCell.textContent = timeText.substring(0, 5); // 只显示 HH:MM
+                row.appendChild(firstLimitTimeCell);
+
+                // 成交额(亿)
+                const turnoverCell = document.createElement('td');
+                turnoverCell.textContent = safeNumber(stock.turnover / 100000000, 2);
+                row.appendChild(turnoverCell);
+
+                // 昨日封单(万)
+                const yesterdayAuctionCell = document.createElement('td');
+                yesterdayAuctionCell.textContent = safeNumber(stock.yesterday_auction_unmatched / 10000, 0);
+                row.appendChild(yesterdayAuctionCell);
+
+                // 今日封单(万)
+                const todayAuctionCell = document.createElement('td');
+                todayAuctionCell.textContent = safeNumber(stock.today_auction_unmatched / 10000, 0);
+                row.appendChild(todayAuctionCell);
+
+                // 概念题材
+                const conceptCell = document.createElement('td');
+                conceptCell.textContent = stock.concept_tags || '-';
+                conceptCell.style.maxWidth = '200px';
+                conceptCell.style.overflow = 'hidden';
+                conceptCell.style.textOverflow = 'ellipsis';
+                conceptCell.title = stock.concept_tags || '';
+                row.appendChild(conceptCell);
+
+                tbody.appendChild(row);
+            });
+        }
     </script>
 </body>
 </html>
