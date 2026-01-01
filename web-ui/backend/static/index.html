@@ -3,226 +3,357 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
     <title>Funcat 涨跌停数据看板</title>
-    <link rel="stylesheet" href="https://unpkg.com/element-plus@2.4.4/dist/index.css">
-    <script src="https://unpkg.com/echarts@5.4.3/dist/echarts.min.js"></script>
+
+    <!-- Bootstrap 5 CSS with SRI -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css"
+          rel="stylesheet"
+          integrity="sha384-9ndCyUaIbzAi2FUVXJi0CjmCapSmO7SnpJef0486qhLnuZ2cdeRhO02iuK6FUUVM"
+          crossorigin="anonymous">
+
+    <!-- ECharts with SRI -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"
+            integrity="sha384-mSF1XINEHy/qDkN8RDOAR6b8VOVXvxLLqJJ6vJH9PYm0rI8z3x4jZJ9fZvPJvLzf"
+            crossorigin="anonymous"></script>
+
     <style>
         body {
-            font-family: 'Microsoft YaHei', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
-            margin: 0;
-            padding: 20px;
+            padding: 20px 0;
         }
-        .container {
-            max-width: 1400px;
-            margin: 0 auto;
-        }
-        .header {
-            background: white;
-            padding: 20px;
+        .card {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: none;
             border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        }
-        .stats {
-            display: grid;
-            grid-template-columns: repeat(4, 1fr);
-            gap: 20px;
-            margin-bottom: 20px;
         }
         .stat-card {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
             text-align: center;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+            padding: 20px;
+            transition: transform 0.3s;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
         }
         .stat-value {
-            font-size: 36px;
+            font-size: 2.5rem;
             font-weight: bold;
             margin: 10px 0;
         }
         .stat-label {
-            color: #909399;
-        }
-        .panel {
-            background: white;
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.1);
-        }
-        .panel-title {
-            font-size: 18px;
-            font-weight: bold;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #E4E7ED;
+            color: #6c757d;
+            font-size: 0.9rem;
         }
         #chart {
             width: 100%;
             height: 400px;
         }
-        .red { color: #F56C6C; }
-        .green { color: #67C23A; }
-        .blue { color: #409EFF; }
-        .orange { color: #E6A23C; }
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .badge-S { background-color: #dc3545; }
+        .badge-A-plus { background-color: #fd7e14; }
+        .badge-A { background-color: #ffc107; }
+        .badge-B { background-color: #0dcaf0; }
+        .badge-C { background-color: #6c757d; }
     </style>
 </head>
 <body>
-    <div id="app" class="container">
-        <div class="header">
-            <h1>📊 Funcat 涨跌停数据看板</h1>
-            <p>实时监控市场热点 · 板块涨停统计</p>
-            <el-button type="primary" @click="loadData" style="margin-top: 10px;">🔄 刷新数据</el-button>
-        </div>
-
-        <div class="stats">
-            <div class="stat-card">
-                <div class="stat-value red">{{ totalLimitUp }}</div>
-                <div class="stat-label">涨停家数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value green">{{ totalLimitDown }}</div>
-                <div class="stat-label">跌停家数</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value blue">{{ totalOneWord }}</div>
-                <div class="stat-label">一字涨停</div>
-            </div>
-            <div class="stat-card">
-                <div class="stat-value orange">{{ totalBroken }}</div>
-                <div class="stat-label">炸板总数</div>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h1 class="card-title mb-2">📊 Funcat 涨跌停数据看板</h1>
+                <p class="card-text text-muted mb-3">实时监控市场热点 · 板块涨停统计 · 连板天梯</p>
+                <button class="btn btn-primary" onclick="loadData()">🔄 刷新数据</button>
+                <button class="btn btn-danger ms-2" onclick="window.location.href='/static/yangjia.html'">
+                    🔥 炒股养家心法选股
+                </button>
+                <span class="ms-3 text-muted">数据日期: <strong id="currentDate">2025-12-30</strong></span>
             </div>
         </div>
 
-        <div class="panel">
-            <div class="panel-title">📊 板块涨停排行</div>
-            <div id="chart"></div>
+        <!-- 统计卡片 -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value text-danger" id="totalLimitUp">0</div>
+                    <div class="stat-label">涨停家数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value text-success" id="totalLimitDown">0</div>
+                    <div class="stat-label">跌停家数</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value text-primary" id="totalOneWord">0</div>
+                    <div class="stat-label">一字涨停</div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card stat-card">
+                    <div class="stat-value text-warning" id="totalBroken">0</div>
+                    <div class="stat-label">炸板总数</div>
+                </div>
+            </div>
         </div>
 
-        <div class="panel">
-            <div class="panel-title">🔥 板块强度排行（日期: {{ selectedDate }}）</div>
-            <el-table :data="sectorStrength" stripe style="width: 100%">
-                <el-table-column type="index" label="排名" width="60"></el-table-column>
-                <el-table-column prop="sector_name" label="板块名称" width="120"></el-table-column>
-                <el-table-column prop="strength_grade" label="等级" width="80"></el-table-column>
-                <el-table-column label="强度分数" width="110">
-                    <template v-slot="scope">
-                        <span class="orange" style="font-weight: bold;">
-                            {{ safeFixed(scope.row.strength_score, 1) }}
-                        </span>
-                    </template>
-                </el-table-column>
-                <el-table-column prop="limit_up_count" label="涨停数" width="90"></el-table-column>
-                <el-table-column prop="one_word_count" label="一字板" width="90"></el-table-column>
-                <el-table-column label="平均涨幅%" width="110">
-                    <template v-slot="scope">
-                        <span class="red">{{ safeFixed(scope.row.avg_change_pct, 2) }}%</span>
-                    </template>
-                </el-table-column>
-            </el-table>
+        <!-- 图表 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">📊 板块涨停排行</h5>
+                <div id="chart"></div>
+            </div>
+        </div>
+
+        <!-- 板块强度排行 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">🔥 板块强度排行</h5>
+                <div class="table-container">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>排名</th>
+                                <th>板块名称</th>
+                                <th>等级</th>
+                                <th>强度分数</th>
+                                <th>涨停数</th>
+                                <th>一字板</th>
+                                <th>平均涨幅%</th>
+                            </tr>
+                        </thead>
+                        <tbody id="strengthTable">
+                            <tr>
+                                <td colspan="7" class="text-center text-muted">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
 
-    <script src="https://unpkg.com/vue@3.3.11/dist/vue.global.js"></script>
-    <script src="https://unpkg.com/element-plus@2.4.4/dist/index.full.js"></script>
+    <!-- Bootstrap JS with SRI -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"
+            integrity="sha384-geWF76RCwLtnZ8qwWowPQNguL3RmwHVBC9FhGdlKrxdiJJigb/j/68SIy3Te4Bkz"
+            crossorigin="anonymous"></script>
 
     <script>
-        const { createApp } = Vue;
-        const app = createApp({
-            data() {
-                return {
-                    selectedDate: '2025-12-30',
-                    sectorStats: [],
-                    sectorStrength: [],
-                    totalLimitUp: 0,
-                    totalLimitDown: 0,
-                    totalOneWord: 0,
-                    totalBroken: 0,
-                    chart: null
-                };
-            },
-            mounted() {
-                console.log('✅ Vue 应用已挂载');
-                this.loadData();
-            },
-            methods: {
-                async loadData() {
-                    console.log('🔄 开始加载数据...');
-                    try {
-                        await this.loadSectorStats();
-                        await this.loadSectorStrength();
-                        this.renderChart();
-                    } catch (error) {
-                        console.error('❌ 加载数据失败:', error);
-                        window['element-plus'].ElMessage.error('加载数据失败');
-                    }
-                },
+        // 配置
+        const API_DATE = '2025-12-30';
+        let chart = null;
 
-                async loadSectorStats() {
-                    const response = await fetch(`/api/v1/sectors/stats?date=${this.selectedDate}`);
-                    const result = await response.json();
-                    console.log('📊 板块统计:', result);
+        // 安全的 DOM 操作函数
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text || '0';
+        }
 
-                    if (result.code === 200 && Array.isArray(result.data)) {
-                        this.sectorStats = result.data;
-                        this.totalLimitUp = this.sectorStats.reduce((s, v) => s + (v.limit_up_count || 0), 0);
-                        this.totalLimitDown = this.sectorStats.reduce((s, v) => s + (v.limit_down_count || 0), 0);
-                        this.totalOneWord = this.sectorStats.reduce((s, v) => s + (v.one_word_count || 0), 0);
-                        this.totalBroken = this.sectorStats.reduce((s, v) => s + (v.broken_count || 0), 0);
-                    }
-                },
+        function safeNumber(val, digits = 0) {
+            const num = parseFloat(val);
+            return isNaN(num) ? '0' : num.toFixed(digits);
+        }
 
-                async loadSectorStrength() {
-                    const response = await fetch(`/api/v1/sector-strength?date=${this.selectedDate}&limit=20`);
-                    const result = await response.json();
-                    console.log('🔥 板块强度:', result);
+        function safeMoney(val) {
+            const num = parseFloat(val);
+            if (isNaN(num) || num === 0) return '0';
+            if (num >= 100000000) return (num / 100000000).toFixed(2) + '亿';
+            if (num >= 10000) return (num / 10000).toFixed(2) + '万';
+            return num.toFixed(2);
+        }
 
-                    if (result.code === 200 && Array.isArray(result.data)) {
-                        this.sectorStrength = result.data;
-                    }
-                },
-
-                renderChart() {
-                    if (!this.sectorStats || this.sectorStats.length === 0) return;
-
-                    if (!this.chart) {
-                        this.chart = echarts.init(document.getElementById('chart'));
-                    }
-
-                    const top10 = this.sectorStats.slice(0, 10);
-                    const option = {
-                        tooltip: { trigger: 'axis' },
-                        legend: { data: ['涨停', '一字板', '炸板'] },
-                        grid: { left: '3%', right: '4%', bottom: '3%', containLabel: true },
-                        xAxis: { type: 'value' },
-                        yAxis: { type: 'category', data: top10.map(s => s.sector_name || '') },
-                        series: [
-                            { name: '涨停', type: 'bar', data: top10.map(s => s.limit_up_count || 0), itemStyle: { color: '#F56C6C' } },
-                            { name: '一字板', type: 'bar', data: top10.map(s => s.one_word_count || 0), itemStyle: { color: '#E6A23C' } },
-                            { name: '炸板', type: 'bar', data: top10.map(s => s.broken_count || 0), itemStyle: { color: '#909399' } }
-                        ]
-                    };
-                    this.chart.setOption(option);
-                    console.log('✅ 图表渲染成功');
-                },
-
-                safeFixed(value, digits) {
-                    if (value == null || value === undefined || isNaN(value)) return '-';
-                    return Number(value).toFixed(digits);
-                }
+        // 加载数据
+        async function loadData() {
+            try {
+                await Promise.all([
+                    loadSectorStats(),
+                    loadSectorStrength()
+                ]);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                alert('加载数据失败，请重试');
             }
+        }
+
+        // 加载板块统计
+        async function loadSectorStats() {
+            const response = await fetch(`/api/v1/sectors/stats?date=${API_DATE}`);
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('板块统计数据异常:', result);
+                return;
+            }
+
+            const data = result.data;
+
+            // 更新统计卡片
+            const totals = data.reduce((acc, item) => ({
+                limitUp: acc.limitUp + (item.limit_up_count || 0),
+                limitDown: acc.limitDown + (item.limit_down_count || 0),
+                oneWord: acc.oneWord + (item.one_word_count || 0),
+                broken: acc.broken + (item.broken_count || 0)
+            }), { limitUp: 0, limitDown: 0, oneWord: 0, broken: 0 });
+
+            setText('totalLimitUp', totals.limitUp);
+            setText('totalLimitDown', totals.limitDown);
+            setText('totalOneWord', totals.oneWord);
+            setText('totalBroken', totals.broken);
+
+            // 渲染图表
+            renderChart(data.slice(0, 10));
+        }
+
+        // 加载板块强度
+        async function loadSectorStrength() {
+            const response = await fetch(`/api/v1/sector-strength?date=${API_DATE}&limit=20`);
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('板块强度数据异常:', result);
+                return;
+            }
+
+            renderStrengthTable(result.data);
+        }
+
+        // 渲染图表
+        function renderChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (!chart) {
+                chart = echarts.init(document.getElementById('chart'));
+            }
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                legend: {
+                    data: ['涨停', '一字板', '炸板']
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'value'
+                },
+                yAxis: {
+                    type: 'category',
+                    data: data.map(item => item.sector_name || '')
+                },
+                series: [
+                    {
+                        name: '涨停',
+                        type: 'bar',
+                        data: data.map(item => item.limit_up_count || 0),
+                        itemStyle: { color: '#dc3545' }
+                    },
+                    {
+                        name: '一字板',
+                        type: 'bar',
+                        data: data.map(item => item.one_word_count || 0),
+                        itemStyle: { color: '#ffc107' }
+                    },
+                    {
+                        name: '炸板',
+                        type: 'bar',
+                        data: data.map(item => item.broken_count || 0),
+                        itemStyle: { color: '#6c757d' }
+                    }
+                ]
+            };
+
+            chart.setOption(option);
+        }
+
+        // 渲染板块强度表格
+        function renderStrengthTable(data) {
+            const tbody = document.getElementById('strengthTable');
+            tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无数据</td></tr>';
+                return;
+            }
+
+            data.forEach((item, index) => {
+                const row = document.createElement('tr');
+
+                // 排名
+                const rankCell = document.createElement('td');
+                rankCell.textContent = index + 1;
+                row.appendChild(rankCell);
+
+                // 板块名称
+                const nameCell = document.createElement('td');
+                const nameStrong = document.createElement('strong');
+                nameStrong.textContent = item.sector_name || '-';
+                nameCell.appendChild(nameStrong);
+                row.appendChild(nameCell);
+
+                // 等级
+                const gradeCell = document.createElement('td');
+                const gradeBadge = document.createElement('span');
+                const grade = item.strength_grade || 'C';
+                gradeBadge.className = `badge badge-${grade.replace('+', '-plus')}`;
+                gradeBadge.textContent = grade;
+                gradeCell.appendChild(gradeBadge);
+                row.appendChild(gradeCell);
+
+                // 强度分数
+                const scoreCell = document.createElement('td');
+                const scoreStrong = document.createElement('strong');
+                scoreStrong.className = 'text-warning';
+                scoreStrong.textContent = safeNumber(item.strength_score, 1);
+                scoreCell.appendChild(scoreStrong);
+                row.appendChild(scoreCell);
+
+                // 涨停数
+                const limitUpCell = document.createElement('td');
+                const limitUpBadge = document.createElement('span');
+                limitUpBadge.className = 'badge bg-danger';
+                limitUpBadge.textContent = item.limit_up_count || 0;
+                limitUpCell.appendChild(limitUpBadge);
+                row.appendChild(limitUpCell);
+
+                // 一字板
+                const oneWordCell = document.createElement('td');
+                oneWordCell.textContent = item.one_word_count || 0;
+                row.appendChild(oneWordCell);
+
+                // 平均涨幅
+                const avgChangeCell = document.createElement('td');
+                const avgChangeSpan = document.createElement('span');
+                avgChangeSpan.className = 'text-danger fw-bold';
+                avgChangeSpan.textContent = safeNumber(item.avg_change_pct, 2) + '%';
+                avgChangeCell.appendChild(avgChangeSpan);
+                row.appendChild(avgChangeCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // 页面加载时自动获取数据
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ 页面加载完成，开始获取数据');
+            loadData();
         });
 
-        app.config.errorHandler = (err) => {
-            console.error('❌ Vue 错误:', err);
-        };
-
-        app.use(window['element-plus']);
-        app.mount('#app');
-        console.log('🎉 应用启动成功');
+        // 窗口大小改变时重绘图表
+        window.addEventListener('resize', function() {
+            if (chart) chart.resize();
+        });
     </script>
 </body>
 </html>
