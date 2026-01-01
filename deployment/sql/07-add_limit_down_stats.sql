@@ -70,7 +70,10 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- 3. 更新板块强度排行视图，增加跌停统计列
-CREATE OR REPLACE VIEW v_sector_strength_ranking AS
+-- 注意：必须先删除旧视图，因为列的顺序改变了
+DROP VIEW IF EXISTS v_sector_strength_ranking;
+
+CREATE VIEW v_sector_strength_ranking AS
 SELECT
     sds.trade_date,
     sds.sector_id,
