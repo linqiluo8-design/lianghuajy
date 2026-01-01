@@ -124,13 +124,15 @@
                                 <th>等级</th>
                                 <th>强度分数</th>
                                 <th>涨停数</th>
-                                <th>一字板</th>
+                                <th>一字涨停</th>
+                                <th>跌停数</th>
+                                <th>一字跌停</th>
                                 <th>平均涨幅%</th>
                             </tr>
                         </thead>
                         <tbody id="strengthTable">
                             <tr>
-                                <td colspan="7" class="text-center text-muted">加载中...</td>
+                                <td colspan="9" class="text-center text-muted">加载中...</td>
                             </tr>
                         </tbody>
                     </table>
@@ -283,7 +285,7 @@
             tbody.innerHTML = '';
 
             if (!data || data.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted">暂无数据</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无数据</td></tr>';
                 return;
             }
 
@@ -292,12 +294,15 @@
 
                 // 排名
                 const rankCell = document.createElement('td');
-                rankCell.textContent = index + 1;
+                const rankStrong = document.createElement('strong');
+                rankStrong.textContent = index + 1;
+                rankCell.appendChild(rankStrong);
                 row.appendChild(rankCell);
 
                 // 板块名称
                 const nameCell = document.createElement('td');
                 const nameStrong = document.createElement('strong');
+                nameStrong.className = 'text-dark';
                 nameStrong.textContent = item.sector_name || '-';
                 nameCell.appendChild(nameStrong);
                 row.appendChild(nameCell);
@@ -306,7 +311,7 @@
                 const gradeCell = document.createElement('td');
                 const gradeBadge = document.createElement('span');
                 const grade = item.strength_grade || 'C';
-                gradeBadge.className = `badge badge-${grade.replace('+', '-plus')}`;
+                gradeBadge.className = `badge badge-${grade.replace('+', '-plus')} fw-bold`;
                 gradeBadge.textContent = grade;
                 gradeCell.appendChild(gradeBadge);
                 row.appendChild(gradeCell);
@@ -314,7 +319,7 @@
                 // 强度分数
                 const scoreCell = document.createElement('td');
                 const scoreStrong = document.createElement('strong');
-                scoreStrong.className = 'text-warning';
+                scoreStrong.className = 'text-danger';
                 scoreStrong.textContent = safeNumber(item.strength_score, 1);
                 scoreCell.appendChild(scoreStrong);
                 row.appendChild(scoreCell);
@@ -322,20 +327,56 @@
                 // 涨停数
                 const limitUpCell = document.createElement('td');
                 const limitUpBadge = document.createElement('span');
-                limitUpBadge.className = 'badge bg-danger';
+                limitUpBadge.className = 'badge bg-danger fw-bold';
                 limitUpBadge.textContent = item.limit_up_count || 0;
                 limitUpCell.appendChild(limitUpBadge);
                 row.appendChild(limitUpCell);
 
-                // 一字板
+                // 一字涨停
                 const oneWordCell = document.createElement('td');
-                oneWordCell.textContent = item.one_word_count || 0;
+                const oneWordText = document.createElement('span');
+                oneWordText.className = 'text-dark fw-bold';
+                oneWordText.textContent = item.one_word_count || 0;
+                oneWordCell.appendChild(oneWordText);
                 row.appendChild(oneWordCell);
+
+                // 跌停数
+                const limitDownCell = document.createElement('td');
+                const limitDownCount = item.limit_down_count || 0;
+                if (limitDownCount > 0) {
+                    const limitDownBadge = document.createElement('span');
+                    limitDownBadge.className = 'badge bg-success fw-bold';
+                    limitDownBadge.textContent = limitDownCount;
+                    limitDownCell.appendChild(limitDownBadge);
+                } else {
+                    const limitDownText = document.createElement('span');
+                    limitDownText.className = 'text-muted';
+                    limitDownText.textContent = '0';
+                    limitDownCell.appendChild(limitDownText);
+                }
+                row.appendChild(limitDownCell);
+
+                // 一字跌停
+                const oneWordDownCell = document.createElement('td');
+                const oneWordDownCount = item.one_word_limit_down_count || 0;
+                if (oneWordDownCount > 0) {
+                    const oneWordDownText = document.createElement('span');
+                    oneWordDownText.className = 'text-success fw-bold';
+                    oneWordDownText.textContent = oneWordDownCount;
+                    oneWordDownCell.appendChild(oneWordDownText);
+                } else {
+                    const oneWordDownText = document.createElement('span');
+                    oneWordDownText.className = 'text-muted';
+                    oneWordDownText.textContent = '0';
+                    oneWordDownCell.appendChild(oneWordDownText);
+                }
+                row.appendChild(oneWordDownCell);
 
                 // 平均涨幅
                 const avgChangeCell = document.createElement('td');
                 const avgChangeSpan = document.createElement('span');
-                avgChangeSpan.className = 'text-danger fw-bold';
+                const avgChange = parseFloat(item.avg_change_pct) || 0;
+                avgChangeSpan.className = avgChange >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
                 avgChangeSpan.textContent = safeNumber(item.avg_change_pct, 2) + '%';
                 avgChangeCell.appendChild(avgChangeSpan);
                 row.appendChild(avgChangeCell);

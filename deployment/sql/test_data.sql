@@ -16,39 +16,40 @@
 \echo '📊 插入板块每日统计数据...'
 INSERT INTO sector_daily_stats (
     trade_date, sector_id, sector_name,
-    limit_up_count, limit_down_count, one_word_count,
+    limit_up_count, limit_down_count, one_word_count, one_word_limit_down_count,
     broken_count, broken_resealed_count, broken_not_resealed_count,
     consecutive_2_count, consecutive_3_count, consecutive_4_count, consecutive_5_plus_count,
     total_stocks, avg_change_pct, total_turnover
 ) VALUES
-    -- 新能源板块（强势）
-    ('2025-12-30', 1, '新能源', 8, 0, 2, 1, 1, 0, 3, 2, 1, 0, 150, 5.50, 5000000000),
+    -- 新能源板块（强势，无跌停）
+    ('2025-12-30', 1, '新能源', 8, 0, 2, 0, 1, 1, 0, 3, 2, 1, 0, 150, 5.50, 5000000000),
 
-    -- 半导体板块（中等）
-    ('2025-12-30', 2, '半导体', 5, 1, 1, 2, 1, 1, 2, 1, 0, 0, 120, 3.20, 3500000000),
+    -- 半导体板块（中等，有跌停但非一字）
+    ('2025-12-30', 2, '半导体', 5, 1, 1, 0, 2, 1, 1, 2, 1, 0, 0, 120, 3.20, 3500000000),
 
-    -- 军工板块（一般）
-    ('2025-12-30', 3, '军工', 3, 0, 0, 1, 0, 1, 2, 0, 0, 0, 80, 2.10, 1500000000),
+    -- 军工板块（一般，无跌停）
+    ('2025-12-30', 3, '军工', 3, 0, 0, 0, 1, 0, 1, 2, 0, 0, 0, 80, 2.10, 1500000000),
 
-    -- 医药板块（弱势）
-    ('2025-12-30', 4, '医药', 2, 2, 0, 3, 1, 2, 1, 0, 0, 0, 100, -0.50, 2000000000),
+    -- 医药板块（弱势，有跌停含1个一字跌停）
+    ('2025-12-30', 4, '医药', 2, 2, 0, 1, 3, 1, 2, 1, 0, 0, 0, 100, -0.50, 2000000000),
 
-    -- 白酒板块（跌停）
-    ('2025-12-30', 5, '白酒', 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 60, -3.80, 1800000000),
+    -- 白酒板块（恐慌，全部跌停含2个一字跌停）
+    ('2025-12-30', 5, '白酒', 0, 4, 0, 2, 0, 0, 0, 0, 0, 0, 0, 60, -3.80, 1800000000),
 
-    -- 消费电子（中等）
-    ('2025-12-30', 6, '消费电子', 4, 0, 1, 1, 1, 0, 1, 1, 0, 0, 90, 4.20, 2800000000),
+    -- 消费电子（中等，无跌停）
+    ('2025-12-30', 6, '消费电子', 4, 0, 1, 0, 1, 1, 0, 1, 1, 0, 0, 90, 4.20, 2800000000),
 
-    -- 人工智能（强势）
-    ('2025-12-30', 7, '人工智能', 7, 0, 3, 0, 0, 0, 2, 2, 1, 1, 110, 6.80, 4500000000),
+    -- 人工智能（强势，无跌停）
+    ('2025-12-30', 7, '人工智能', 7, 0, 3, 0, 0, 0, 0, 2, 2, 1, 1, 110, 6.80, 4500000000),
 
-    -- 数字经济（一般）
-    ('2025-12-30', 8, '数字经济', 3, 1, 0, 2, 1, 1, 1, 1, 0, 0, 95, 2.50, 2200000000)
+    -- 数字经济（一般，有跌停但非一字）
+    ('2025-12-30', 8, '数字经济', 3, 1, 0, 0, 2, 1, 1, 1, 1, 0, 0, 95, 2.50, 2200000000)
 
 ON CONFLICT (trade_date, sector_id) DO UPDATE SET
     limit_up_count = EXCLUDED.limit_up_count,
     limit_down_count = EXCLUDED.limit_down_count,
     one_word_count = EXCLUDED.one_word_count,
+    one_word_limit_down_count = EXCLUDED.one_word_limit_down_count,
     broken_count = EXCLUDED.broken_count,
     broken_resealed_count = EXCLUDED.broken_resealed_count,
     broken_not_resealed_count = EXCLUDED.broken_not_resealed_count,

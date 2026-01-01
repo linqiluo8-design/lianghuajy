@@ -42,6 +42,7 @@ type SectorDailyStats struct {
 	LimitUpCount            int       `json:"limit_up_count"`
 	LimitDownCount          int       `json:"limit_down_count"`
 	OneWordCount            int       `json:"one_word_count"`
+	OneWordLimitDownCount   int       `json:"one_word_limit_down_count"`
 	BrokenCount             int       `json:"broken_count"`
 	BrokenResealedCount     int       `json:"broken_resealed_count"`
 	BrokenNotResealedCount  int       `json:"broken_not_resealed_count"`
@@ -108,6 +109,8 @@ type SectorStrength struct {
 	SectorType              string  `json:"sector_type"`
 	LimitUpCount            int     `json:"limit_up_count"`
 	OneWordCount            int     `json:"one_word_count"`
+	LimitDownCount          int     `json:"limit_down_count"`
+	OneWordLimitDownCount   int     `json:"one_word_limit_down_count"`
 	BrokenCount             int     `json:"broken_count"`
 	BrokenResealedCount     int     `json:"broken_resealed_count"`
 	BrokenNotResealedCount  int     `json:"broken_not_resealed_count"`
@@ -258,6 +261,7 @@ func getSectorStats(c *gin.Context) {
 			sds.id, sds.trade_date, sds.sector_id,
 			s.sector_name,
 			sds.limit_up_count, sds.limit_down_count, sds.one_word_count,
+			sds.one_word_limit_down_count,
 			sds.broken_count, sds.broken_resealed_count, sds.broken_not_resealed_count,
 			sds.consecutive_2_count, sds.consecutive_3_count,
 			sds.consecutive_4_count, sds.consecutive_5_plus_count,
@@ -286,6 +290,7 @@ func getSectorStats(c *gin.Context) {
 		err := rows.Scan(
 			&s.ID, &s.TradeDate, &s.SectorID, &s.SectorName,
 			&s.LimitUpCount, &s.LimitDownCount, &s.OneWordCount,
+			&s.OneWordLimitDownCount,
 			&s.BrokenCount, &s.BrokenResealedCount, &s.BrokenNotResealedCount,
 			&s.Consecutive2Count, &s.Consecutive3Count,
 			&s.Consecutive4Count, &s.Consecutive5PlusCount,
@@ -461,8 +466,9 @@ func getSectorStrength(c *gin.Context) {
 	query := `
 		SELECT
 			trade_date, sector_id, sector_code, sector_name, sector_type,
-			limit_up_count, one_word_count, broken_count,
-			broken_resealed_count, broken_not_resealed_count,
+			limit_up_count, one_word_count,
+			limit_down_count, one_word_limit_down_count,
+			broken_count, broken_resealed_count, broken_not_resealed_count,
 			consecutive_2_count, consecutive_3_count,
 			consecutive_4_count, consecutive_5_plus_count,
 			total_stocks, avg_change_pct, total_turnover,
@@ -490,8 +496,9 @@ func getSectorStrength(c *gin.Context) {
 		var s SectorStrength
 		err := rows.Scan(
 			&s.TradeDate, &s.SectorID, &s.SectorCode, &s.SectorName, &s.SectorType,
-			&s.LimitUpCount, &s.OneWordCount, &s.BrokenCount,
-			&s.BrokenResealedCount, &s.BrokenNotResealedCount,
+			&s.LimitUpCount, &s.OneWordCount,
+			&s.LimitDownCount, &s.OneWordLimitDownCount,
+			&s.BrokenCount, &s.BrokenResealedCount, &s.BrokenNotResealedCount,
 			&s.Consecutive2Count, &s.Consecutive3Count,
 			&s.Consecutive4Count, &s.Consecutive5PlusCount,
 			&s.TotalStocks, &s.AvgChangePct, &s.TotalTurnover,
