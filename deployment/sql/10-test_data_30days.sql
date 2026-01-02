@@ -57,28 +57,33 @@ BEGIN
 
         -- 插入其他不同连板数的股票
         FOR i IN 1..LEAST(limit_up_total, 50) LOOP
-            INSERT INTO daily_limit_stats (
-                trade_date, stock_code, stock_name,
-                sector_id, limit_reason, industry,
-                open_price, close_price, high_price, low_price, pre_close,
-                change_pct, limit_type, is_one_word, is_broken, is_resealed,
-                broken_count, consecutive_limit_days,
-                volume, turnover, turnover_rate, seal_amount, first_limit_time,
-                yesterday_auction_unmatched, today_auction_unmatched, concept_tags
-            ) VALUES (
-                current_date,
-                '6' || LPAD((day_offset * 100 + i)::TEXT, 5, '0') || '.SH',
-                '测试股' || i,
-                (i % 8) + 1,
-                '板块轮动',
-                '电子信息',
-                30.00, 33.00, 33.00, 29.50, 30.00,
-                10.00, 'limit_up', (i % 10 = 0), (i % 5 = 0), (i % 5 = 0),
-                0, 1 + (i % GREATEST(max_board - 1, 1)),
-                3000000 + (i * 10000), 990000000 + (i * 1000000), 8.5,
-                200000 + (i * 1000), ('09:' || LPAD((30 + i)::TEXT, 2, '0') || ':00')::TIME,
-                1500000 + (i * 10000), 2000000 + (i * 10000), '热门题材'
-            ) ON CONFLICT (trade_date, stock_code) DO NOTHING;
+            DECLARE
+                time_minutes INT := 30 + (i % 30);  -- 限制在30-59分钟范围内
+                time_str TEXT := '09:' || LPAD(time_minutes::TEXT, 2, '0') || ':00';
+            BEGIN
+                INSERT INTO daily_limit_stats (
+                    trade_date, stock_code, stock_name,
+                    sector_id, limit_reason, industry,
+                    open_price, close_price, high_price, low_price, pre_close,
+                    change_pct, limit_type, is_one_word, is_broken, is_resealed,
+                    broken_count, consecutive_limit_days,
+                    volume, turnover, turnover_rate, seal_amount, first_limit_time,
+                    yesterday_auction_unmatched, today_auction_unmatched, concept_tags
+                ) VALUES (
+                    current_date,
+                    '6' || LPAD((day_offset * 100 + i)::TEXT, 5, '0') || '.SH',
+                    '测试股' || i,
+                    (i % 8) + 1,
+                    '板块轮动',
+                    '电子信息',
+                    30.00, 33.00, 33.00, 29.50, 30.00,
+                    10.00, 'limit_up', (i % 10 = 0), (i % 5 = 0), (i % 5 = 0),
+                    0, 1 + (i % GREATEST(max_board - 1, 1)),
+                    3000000 + (i * 10000), 990000000 + (i * 1000000), 8.5,
+                    200000 + (i * 1000), time_str::TIME,
+                    1500000 + (i * 10000), 2000000 + (i * 10000), '热门题材'
+                ) ON CONFLICT (trade_date, stock_code) DO NOTHING;
+            END;
         END LOOP;
 
     END LOOP;
