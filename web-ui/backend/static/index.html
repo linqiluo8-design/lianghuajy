@@ -87,11 +87,29 @@
             <div class="card-body">
                 <h1 class="card-title mb-2">📊 Funcat 涨跌停数据看板</h1>
                 <p class="card-text text-muted mb-3">实时监控市场热点 · 板块涨停统计 · 连板天梯</p>
-                <button class="btn btn-primary" onclick="loadData()">🔄 刷新数据</button>
-                <button class="btn btn-danger ms-2" onclick="window.location.href='/static/yangjia.html'">
-                    🔥 炒股养家心法选股
-                </button>
-                <span class="ms-3 text-muted">数据日期: <strong id="currentDate">2025-12-30</strong></span>
+
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button class="btn btn-primary" onclick="loadData()">🔄 刷新数据</button>
+                    <button class="btn btn-danger" onclick="window.location.href='/static/yangjia.html'">
+                        🔥 炒股养家心法选股
+                    </button>
+
+                    <!-- 数据源选择器 -->
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="dataSourceSelect" class="form-label mb-0 text-muted">数据源:</label>
+                        <select id="dataSourceSelect" class="form-select form-select-sm" style="width: 180px;" onchange="handleDataSourceChange()">
+                            <option value="akshare">AkShare (3-5秒延迟)</option>
+                            <option value="pytdx">通达信 (2-3秒延迟)</option>
+                        </select>
+                    </div>
+
+                    <span class="text-muted">
+                        <small>
+                            <span id="dataSourceStatus" class="badge bg-secondary">未启动</span>
+                            | 数据日期: <strong id="currentDate">2025-12-30</strong>
+                        </small>
+                    </span>
+                </div>
             </div>
         </div>
 
@@ -797,6 +815,122 @@
                 tbody.appendChild(row);
             });
         }
+
+        // ============================================
+        // 数据源切换功能
+        // ============================================
+
+        /**
+         * 处理数据源切换
+         */
+        async function handleDataSourceChange() {
+            const select = document.getElementById('dataSourceSelect');
+            const newSource = select.value;
+            const statusBadge = document.getElementById('dataSourceStatus');
+
+            console.log(`切换数据源到: ${newSource}`);
+
+            // 更新状态
+            statusBadge.textContent = '切换中...';
+            statusBadge.className = 'badge bg-warning';
+
+            try {
+                // 调用后端 API 切换数据源
+                const response = await fetch('/api/v1/realtime/switch-source', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        source: newSource
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    statusBadge.textContent = '运行中 (' + newSource + ')';
+                    statusBadge.className = 'badge bg-success';
+
+                    // 保存到 localStorage
+                    localStorage.setItem('dataSource', newSource);
+
+                    // 提示用户
+                    console.log(`✅ 数据源已切换为: ${newSource}`);
+                } else {
+                    throw new Error(result.message || '切换失败');
+                }
+            } catch (error) {
+                console.error('❌ 切换数据源失败:', error);
+                statusBadge.textContent = '切换失败';
+                statusBadge.className = 'badge bg-danger';
+
+                // 恢复之前的选择
+                const previousSource = localStorage.getItem('dataSource') || 'akshare';
+                select.value = previousSource;
+
+                alert(`数据源切换失败: ${error.message}\n\n请确保实时采集服务已启动。`);
+            }
+        }
+
+        /**
+         * 检查实时服务状态
+         */
+        async function checkRealtimeStatus() {
+            const statusBadge = document.getElementById('dataSourceStatus');
+
+            try {
+                const response = await fetch('/api/v1/realtime/status');
+                const result = await response.json();
+
+                if (result.code === 200 && result.data) {
+                    const status = result.data;
+
+                    if (status.running) {
+                        statusBadge.textContent = `运行中 (${status.source})`;
+                        statusBadge.className = 'badge bg-success';
+
+                        // 更新下拉框
+                        document.getElementById('dataSourceSelect').value = status.source;
+
+                        // 更新统计
+                        console.log(`实时服务状态: 运行中 | 数据源: ${status.source} | 采集次数: ${status.fetch_count}`);
+                    } else {
+                        statusBadge.textContent = '未启动';
+                        statusBadge.className = 'badge bg-secondary';
+                    }
+                } else {
+                    statusBadge.textContent = '未知';
+                    statusBadge.className = 'badge bg-secondary';
+                }
+            } catch (error) {
+                console.error('检查服务状态失败:', error);
+                statusBadge.textContent = '离线';
+                statusBadge.className = 'badge bg-danger';
+            }
+        }
+
+        /**
+         * 初始化数据源选择
+         */
+        function initDataSource() {
+            // 从 localStorage 读取上次选择的数据源
+            const savedSource = localStorage.getItem('dataSource');
+            if (savedSource) {
+                document.getElementById('dataSourceSelect').value = savedSource;
+            }
+
+            // 检查服务状态
+            checkRealtimeStatus();
+
+            // 每10秒检查一次状态
+            setInterval(checkRealtimeStatus, 10000);
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initDataSource();
+        });
     </script>
 </body>
 </html>
