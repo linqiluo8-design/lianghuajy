@@ -186,13 +186,13 @@
                                     <th>名称</th>
                                     <th>涨幅%</th>
                                     <th>开盘涨幅%</th>
-                                    <th>类型</th>
-                                    <th>连板天数</th>
+                                    <th id="thLimitType">类型</th>
+                                    <th id="thConsecutiveDays">连板天数</th>
                                     <th>几天几板</th>
-                                    <th>涨停原因</th>
+                                    <th id="thLimitReason">涨停原因</th>
                                     <th>所属行业</th>
                                     <th>换手%</th>
-                                    <th>首次涨停时间</th>
+                                    <th id="thFirstLimitTime">首次涨停时间</th>
                                     <th>成交额(亿)</th>
                                     <th>昨日封单(万)</th>
                                     <th>今日封单(万)</th>
@@ -555,17 +555,14 @@
                 // 一字跌停
                 const oneWordDownCell = document.createElement('td');
                 const oneWordDownCount = item.one_word_limit_down_count || 0;
+                const oneWordDownBadge = document.createElement('span');
+                oneWordDownBadge.className = oneWordDownCount > 0 ? 'badge bg-success fw-bold clickable-badge' : 'text-muted';
+                oneWordDownBadge.textContent = oneWordDownCount || '0';
                 if (oneWordDownCount > 0) {
-                    const oneWordDownText = document.createElement('span');
-                    oneWordDownText.className = 'text-success fw-bold';
-                    oneWordDownText.textContent = oneWordDownCount;
-                    oneWordDownCell.appendChild(oneWordDownText);
-                } else {
-                    const oneWordDownText = document.createElement('span');
-                    oneWordDownText.className = 'text-muted';
-                    oneWordDownText.textContent = '0';
-                    oneWordDownCell.appendChild(oneWordDownText);
+                    oneWordDownBadge.title = '点击查看一字跌停个股';
+                    oneWordDownBadge.onclick = () => showSectorStocks(item.sector_name, 'one_word_limit_down', '一字跌停');
                 }
+                oneWordDownCell.appendChild(oneWordDownBadge);
                 row.appendChild(oneWordDownCell);
 
                 // 平均涨幅
@@ -610,6 +607,13 @@
                 const modalTitle = document.getElementById('stockModalLabel');
                 modalTitle.textContent = `${sectorName} - ${typeName}个股`;
 
+                // 根据类型更新表头
+                const isLimitDown = limitType.includes('limit_down');
+                document.getElementById('thLimitType').textContent = isLimitDown ? '跌停类型' : '涨停类型';
+                document.getElementById('thConsecutiveDays').textContent = isLimitDown ? '连续跌停天数' : '连续涨停天数';
+                document.getElementById('thLimitReason').textContent = isLimitDown ? '跌停原因' : '涨停原因';
+                document.getElementById('thFirstLimitTime').textContent = isLimitDown ? '首次跌停时间' : '首次涨停时间';
+
                 // 显示加载状态
                 const tbody = document.getElementById('stockDetailTable');
                 tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">加载中...</td></tr>';
@@ -624,6 +628,9 @@
                 if (limitType === 'one_word_limit_up') {
                     // 一字涨停：过滤涨停类型 + 一字板
                     url += '&limit_type=limit_up&is_one_word=true';
+                } else if (limitType === 'one_word_limit_down') {
+                    // 一字跌停：过滤跌停类型 + 一字板
+                    url += '&limit_type=limit_down&is_one_word=true';
                 } else {
                     // 普通涨停或跌停
                     url += `&limit_type=${limitType}`;
