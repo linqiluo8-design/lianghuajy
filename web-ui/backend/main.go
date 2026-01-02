@@ -568,7 +568,8 @@ func getSectorStocks(c *gin.Context) {
 	}
 
 	sectorName := c.Query("sector_name")
-	limitType := c.Query("limit_type") // limit_up, limit_down
+	limitType := c.Query("limit_type")   // limit_up, limit_down
+	isOneWord := c.Query("is_one_word")  // true, false
 
 	if sectorName == "" {
 		c.JSON(http.StatusBadRequest, APIResponse{
@@ -602,8 +603,14 @@ func getSectorStocks(c *gin.Context) {
 
 	// 如果指定了涨跌停类型，添加过滤条件
 	if limitType != "" {
-		query += " AND limit_type = $3"
+		query += fmt.Sprintf(" AND limit_type = $%d", len(args)+1)
 		args = append(args, limitType)
+	}
+
+	// 如果指定了一字涨停过滤，添加过滤条件
+	if isOneWord == "true" {
+		query += fmt.Sprintf(" AND is_one_word = $%d", len(args)+1)
+		args = append(args, true)
 	}
 
 	query += " ORDER BY consecutive_limit_days DESC, first_limit_time ASC"

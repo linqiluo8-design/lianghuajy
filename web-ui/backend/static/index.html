@@ -523,10 +523,15 @@
 
                 // 一字涨停
                 const oneWordCell = document.createElement('td');
-                const oneWordText = document.createElement('span');
-                oneWordText.className = 'text-dark fw-bold';
-                oneWordText.textContent = item.one_word_count || 0;
-                oneWordCell.appendChild(oneWordText);
+                const oneWordCount = item.one_word_count || 0;
+                const oneWordBadge = document.createElement('span');
+                oneWordBadge.className = oneWordCount > 0 ? 'badge bg-warning text-dark fw-bold clickable-badge' : 'text-dark fw-bold';
+                oneWordBadge.textContent = oneWordCount;
+                if (oneWordCount > 0) {
+                    oneWordBadge.title = '点击查看一字涨停个股';
+                    oneWordBadge.onclick = () => showSectorStocks(item.sector_name, 'one_word_limit_up', '一字涨停');
+                }
+                oneWordCell.appendChild(oneWordBadge);
                 row.appendChild(oneWordCell);
 
                 // 跌停数
@@ -612,8 +617,19 @@
                 // 打开模态框
                 stockModal.show();
 
+                // 构建 URL 参数
+                let url = `/api/v1/sector-stocks?date=${API_DATE}&sector_name=${encodeURIComponent(sectorName)}`;
+
+                // 处理不同的查询类型
+                if (limitType === 'one_word_limit_up') {
+                    // 一字涨停：过滤涨停类型 + 一字板
+                    url += '&limit_type=limit_up&is_one_word=true';
+                } else {
+                    // 普通涨停或跌停
+                    url += `&limit_type=${limitType}`;
+                }
+
                 // 加载数据
-                const url = `/api/v1/sector-stocks?date=${API_DATE}&sector_name=${encodeURIComponent(sectorName)}&limit_type=${limitType}`;
                 const response = await fetch(url);
                 const result = await response.json();
 
