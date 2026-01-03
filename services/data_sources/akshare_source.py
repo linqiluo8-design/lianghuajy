@@ -59,23 +59,23 @@ class AkShareSource(DataSourceBase):
             # 从东方财富获取实时行情
             df_raw = ak.stock_zh_a_spot_em()
 
-            # 字段映射和标准化
+            # 字段映射和标准化（先处理 NA/inf 值，再转换类型）
             df = pd.DataFrame({
                 'stock_code': df_raw['代码'].apply(self._normalize_stock_code),
-                'stock_name': df_raw['名称'],
-                'price': df_raw['最新价'].astype(float),
-                'open_price': df_raw['今开'].astype(float),
-                'high_price': df_raw['最高'].astype(float),
-                'low_price': df_raw['最低'].astype(float),
-                'pre_close': df_raw['昨收'].astype(float),
-                'change_pct': df_raw['涨跌幅'].astype(float),
-                'volume': df_raw['成交量'].astype(int),
-                'turnover': df_raw['成交额'].astype(float),
-                'turnover_rate': df_raw['换手率'].astype(float),
-                'bid1': df_raw.get('买一', 0).astype(float) if '买一' in df_raw.columns else 0,
-                'bid1_volume': df_raw.get('买一量', 0).astype(int) if '买一量' in df_raw.columns else 0,
-                'ask1': df_raw.get('卖一', 0).astype(float) if '卖一' in df_raw.columns else 0,
-                'ask1_volume': df_raw.get('卖一量', 0).astype(int) if '卖一量' in df_raw.columns else 0,
+                'stock_name': df_raw['名称'].fillna(''),
+                'price': pd.to_numeric(df_raw['最新价'], errors='coerce').fillna(0.0),
+                'open_price': pd.to_numeric(df_raw['今开'], errors='coerce').fillna(0.0),
+                'high_price': pd.to_numeric(df_raw['最高'], errors='coerce').fillna(0.0),
+                'low_price': pd.to_numeric(df_raw['最低'], errors='coerce').fillna(0.0),
+                'pre_close': pd.to_numeric(df_raw['昨收'], errors='coerce').fillna(0.0),
+                'change_pct': pd.to_numeric(df_raw['涨跌幅'], errors='coerce').fillna(0.0),
+                'volume': pd.to_numeric(df_raw['成交量'], errors='coerce').fillna(0).astype(int),
+                'turnover': pd.to_numeric(df_raw['成交额'], errors='coerce').fillna(0.0),
+                'turnover_rate': pd.to_numeric(df_raw['换手率'], errors='coerce').fillna(0.0),
+                'bid1': pd.to_numeric(df_raw.get('买一', 0), errors='coerce').fillna(0.0) if '买一' in df_raw.columns else 0.0,
+                'bid1_volume': pd.to_numeric(df_raw.get('买一量', 0), errors='coerce').fillna(0).astype(int) if '买一量' in df_raw.columns else 0,
+                'ask1': pd.to_numeric(df_raw.get('卖一', 0), errors='coerce').fillna(0.0) if '卖一' in df_raw.columns else 0.0,
+                'ask1_volume': pd.to_numeric(df_raw.get('卖一量', 0), errors='coerce').fillna(0).astype(int) if '卖一量' in df_raw.columns else 0,
             })
 
             logger.info(f"✅ AkShare: 获取了 {len(df)} 只股票行情")
