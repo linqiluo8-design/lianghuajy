@@ -16,7 +16,7 @@ fi
 cd "$(dirname "$0")/.."
 
 echo "📝 复制更新后的 index.html 到容器..."
-$DOCKER_CMD cp web-ui/backend/static/index.html funcat-webui:/app/static/index.html
+$DOCKER_CMD cp web-ui/backend/static/index.html webui:/app/static/index.html
 
 if [ $? -eq 0 ]; then
     echo "✅ 文件已更新"
