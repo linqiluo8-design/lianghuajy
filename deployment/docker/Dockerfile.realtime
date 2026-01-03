@@ -1,0 +1,32 @@
+# ============================================
+# Dockerfile for Real-time Data Fetcher Service
+# ============================================
+FROM python:3.10-slim
+
+WORKDIR /app
+
+# Install system dependencies
+RUN apt-get update && apt-get install -y \
+    gcc \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements
+COPY requirements-realtime.txt .
+
+# Install Python dependencies with mirror
+RUN pip install --no-cache-dir -i https://pypi.tuna.tsinghua.edu.cn/simple \
+    -r requirements-realtime.txt
+
+# Copy application code
+COPY services/ ./services/
+COPY config/ ./config/
+
+# Create logs directory
+RUN mkdir -p logs
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD python3 -c "import sys; sys.exit(0)"
+
+# Run the fetcher
+CMD ["python3", "services/realtime_fetcher.py", "--config", "config/realtime.yaml"]

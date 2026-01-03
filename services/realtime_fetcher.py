@@ -77,6 +77,11 @@ class RealtimeFetcher:
                     config['database']['user'] = os.getenv('DB_USER', config['database'].get('user', 'funcat_user'))
                     config['database']['password'] = os.getenv('DB_PASSWORD', config['database'].get('password', 'funcat_password'))
 
+                # 环境变量优先：用环境变量覆盖数据源配置
+                if 'data_source' in config:
+                    config['data_source']['type'] = os.getenv('REALTIME_DATA_SOURCE', config['data_source'].get('type', 'akshare'))
+                    config['data_source']['refresh_interval'] = int(os.getenv('REALTIME_REFRESH_INTERVAL', config['data_source'].get('refresh_interval', 2)))
+
                 return config
         except Exception as e:
             logger.error(f"❌ 加载配置失败: {e}，使用默认配置")
@@ -86,8 +91,8 @@ class RealtimeFetcher:
         """默认配置"""
         return {
             'data_source': {
-                'type': 'akshare',  # akshare 或 pytdx
-                'refresh_interval': 2,  # 刷新间隔（秒）
+                'type': os.getenv('REALTIME_DATA_SOURCE', 'akshare'),  # akshare 或 pytdx
+                'refresh_interval': int(os.getenv('REALTIME_REFRESH_INTERVAL', 2)),  # 刷新间隔（秒）
             },
             'database': {
                 'host': os.getenv('DB_HOST', 'localhost'),
