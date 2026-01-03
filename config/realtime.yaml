@@ -32,11 +32,11 @@ pytdx:
 
 # 数据库配置
 database:
-  host: ${DB_HOST:localhost}
-  port: ${DB_PORT:5432}
-  database: ${DB_NAME:funcat}
-  user: ${DB_USER:funcat_user}
-  password: ${DB_PASSWORD:funcat_password}
+  host: localhost
+  port: 5432
+  database: funcat
+  user: funcat_user
+  password: funcat_password
 
 # 数据过滤配置
 filter:

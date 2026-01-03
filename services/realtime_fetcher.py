@@ -68,6 +68,15 @@ class RealtimeFetcher:
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
                 logger.info(f"✅ 加载配置文件: {config_path}")
+
+                # 环境变量优先：用环境变量覆盖数据库配置
+                if 'database' in config:
+                    config['database']['host'] = os.getenv('DB_HOST', config['database'].get('host', 'localhost'))
+                    config['database']['port'] = int(os.getenv('DB_PORT', config['database'].get('port', 5432)))
+                    config['database']['database'] = os.getenv('DB_NAME', config['database'].get('database', 'funcat'))
+                    config['database']['user'] = os.getenv('DB_USER', config['database'].get('user', 'funcat_user'))
+                    config['database']['password'] = os.getenv('DB_PASSWORD', config['database'].get('password', 'funcat_password'))
+
                 return config
         except Exception as e:
             logger.error(f"❌ 加载配置失败: {e}，使用默认配置")
