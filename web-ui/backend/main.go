@@ -728,6 +728,52 @@ func healthCheck(c *gin.Context) {
 	})
 }
 
+// getRealtimeStatus 获取实时数据源状态
+func getRealtimeStatus(c *gin.Context) {
+	// 检查今天是否有数据，且最近5分钟内有更新
+	var count int
+	var lastUpdate time.Time
+	query := `
+		SELECT COUNT(*), COALESCE(MAX(updated_at), NOW())
+		FROM daily_limit_stats
+		WHERE trade_date = CURRENT_DATE
+		AND updated_at >= NOW() - INTERVAL '5 minutes'
+	`
+	err := db.QueryRow(query).Scan(&count, &lastUpdate)
+
+	if err != nil {
+		log.Printf("查询实时状态失败: %v", err)
+		c.JSON(http.StatusOK, APIResponse{
+			Code:    200,
+			Message: "success",
+			Data: gin.H{
+				"running":     false,
+				"source":      "unknown",
+				"fetch_count": 0,
+				"last_update": "",
+			},
+		})
+		return
+	}
+
+	// 如果有最近5分钟内的数据，认为服务在线
+	running := count > 0
+
+	// 获取数据源类型（从环境变量）
+	dataSource := getEnv("REALTIME_DATA_SOURCE", "akshare")
+
+	c.JSON(http.StatusOK, APIResponse{
+		Code:    200,
+		Message: "success",
+		Data: gin.H{
+			"running":     running,
+			"source":      dataSource,
+			"fetch_count": count,
+			"last_update": lastUpdate.Format("2006-01-02 15:04:05"),
+		},
+	})
+}
+
 // ============================================
 // 炒股养家心法 API 处理函数
 // ============================================
@@ -1151,6 +1197,9 @@ func main() {
 
 		// 每日最高连板数统计
 		api.GET("/daily-highest-board", getDailyHighestBoard)
+
+		// 实时数据源状态
+		api.GET("/realtime/status", getRealtimeStatus)
 
 		// 炒股养家心法
 		api.POST("/yangjia/run-selector", runYangjiaSelector)
