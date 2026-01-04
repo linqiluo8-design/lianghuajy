@@ -61,6 +61,13 @@ class SectorAggregator:
         Returns:
             int: 聚合的板块数量
         """
+        # 自动连接数据库（如果未连接）
+        if self.db_conn is None:
+            logger.info("📡 自动连接数据库...")
+            if not self.connect():
+                logger.error("❌ 数据库连接失败，无法聚合")
+                return 0
+
         if trade_date is None:
             trade_date = datetime.now().strftime('%Y-%m-%d')
 
