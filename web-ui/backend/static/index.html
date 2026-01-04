@@ -148,11 +148,35 @@
             </div>
         </div>
 
-        <!-- 图表 -->
+        <!-- 板块涨停排行（表格形式） -->
         <div class="card mb-4">
             <div class="card-body">
-                <h5 class="card-title">📊 板块涨停排行</h5>
-                <div id="chart"></div>
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h5 class="card-title mb-0">🔥 板块涨停排行</h5>
+                    <select id="sectorSortOrder" class="form-select form-select-sm" style="width: 180px;" onchange="updateSectorSort()">
+                        <option value="desc">涨停数量 ↓ 降序</option>
+                        <option value="asc">涨停数量 ↑ 升序</option>
+                    </select>
+                </div>
+                <div class="table-container">
+                    <table class="table table-hover">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th width="80">排名</th>
+                                <th>板块名称</th>
+                                <th width="120">涨停数量</th>
+                                <th width="120">一字板</th>
+                                <th width="120">跌停数量</th>
+                                <th width="120">炸板数量</th>
+                            </tr>
+                        </thead>
+                        <tbody id="sectorRankingTable">
+                            <tr>
+                                <td colspan="6" class="text-center text-muted">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
@@ -246,6 +270,7 @@
         // 配置 - 使用今天的日期
         const API_DATE = new Date().toISOString().split('T')[0]; // 格式: YYYY-MM-DD
         let chart = null;
+        let sectorDataCache = []; // 缓存板块数据，用于排序
 
         console.log(`📅 当前查询日期: ${API_DATE}`);
 
@@ -311,8 +336,17 @@
             setText('totalBroken', totals.broken);
             setText('totalStocks', totals.stocks);
 
-            // 渲染图表
-            renderChart(data.slice(0, 10));
+            // 缓存数据并渲染板块排行表格
+            sectorDataCache = data;
+            renderSectorRankingTable(data);
+        }
+
+        // 更新板块排序
+        function updateSectorSort() {
+            if (sectorDataCache.length === 0) return;
+
+            const sortOrder = document.getElementById('sectorSortOrder').value;
+            renderSectorRankingTable(sectorDataCache, sortOrder);
         }
 
         // 加载板块强度
@@ -341,58 +375,76 @@
             renderHighestBoardChart(result.data);
         }
 
-        // 渲染图表
-        function renderChart(data) {
-            if (!data || data.length === 0) return;
+        // 渲染板块排行表格
+        function renderSectorRankingTable(data, sortOrder = 'desc') {
+            const tbody = document.getElementById('sectorRankingTable');
+            tbody.innerHTML = '';
 
-            if (!chart) {
-                chart = echarts.init(document.getElementById('chart'));
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted">暂无板块数据</td></tr>';
+                return;
             }
 
-            const option = {
-                tooltip: {
-                    trigger: 'axis',
-                    axisPointer: { type: 'shadow' }
-                },
-                legend: {
-                    data: ['涨停', '一字板', '炸板']
-                },
-                grid: {
-                    left: '3%',
-                    right: '4%',
-                    bottom: '3%',
-                    containLabel: true
-                },
-                xAxis: {
-                    type: 'value'
-                },
-                yAxis: {
-                    type: 'category',
-                    data: data.map(item => item.sector_name || '')
-                },
-                series: [
-                    {
-                        name: '涨停',
-                        type: 'bar',
-                        data: data.map(item => item.limit_up_count || 0),
-                        itemStyle: { color: '#dc3545' }
-                    },
-                    {
-                        name: '一字板',
-                        type: 'bar',
-                        data: data.map(item => item.one_word_count || 0),
-                        itemStyle: { color: '#ffc107' }
-                    },
-                    {
-                        name: '炸板',
-                        type: 'bar',
-                        data: data.map(item => item.broken_count || 0),
-                        itemStyle: { color: '#6c757d' }
-                    }
-                ]
-            };
+            // 按涨停数量排序（升序或降序）
+            const sortedData = [...data].sort((a, b) => {
+                const countA = a.limit_up_count || 0;
+                const countB = b.limit_up_count || 0;
+                return sortOrder === 'desc' ? countB - countA : countA - countB;
+            });
 
-            chart.setOption(option);
+            sortedData.forEach((item, index) => {
+                const row = document.createElement('tr');
+
+                // 排名
+                const rankCell = document.createElement('td');
+                const rankBadge = document.createElement('span');
+                rankBadge.className = index < 3 ? 'badge bg-warning fw-bold' : 'fw-bold';
+                rankBadge.textContent = index + 1;
+                rankCell.appendChild(rankBadge);
+                row.appendChild(rankCell);
+
+                // 板块名称
+                const nameCell = document.createElement('td');
+                const nameStrong = document.createElement('strong');
+                nameStrong.className = 'text-primary';
+                nameStrong.textContent = item.sector_name || '-';
+                nameCell.appendChild(nameStrong);
+                row.appendChild(nameCell);
+
+                // 涨停数量
+                const limitUpCell = document.createElement('td');
+                const limitUpBadge = document.createElement('span');
+                limitUpBadge.className = 'badge bg-danger fs-6';
+                limitUpBadge.textContent = item.limit_up_count || 0;
+                limitUpCell.appendChild(limitUpBadge);
+                row.appendChild(limitUpCell);
+
+                // 一字板
+                const oneWordCell = document.createElement('td');
+                const oneWordBadge = document.createElement('span');
+                oneWordBadge.className = 'badge bg-warning text-dark fs-6';
+                oneWordBadge.textContent = item.one_word_count || 0;
+                oneWordCell.appendChild(oneWordBadge);
+                row.appendChild(oneWordCell);
+
+                // 跌停数量
+                const limitDownCell = document.createElement('td');
+                const limitDownBadge = document.createElement('span');
+                limitDownBadge.className = 'badge bg-success fs-6';
+                limitDownBadge.textContent = item.limit_down_count || 0;
+                limitDownCell.appendChild(limitDownBadge);
+                row.appendChild(limitDownCell);
+
+                // 炸板数量
+                const brokenCell = document.createElement('td');
+                const brokenBadge = document.createElement('span');
+                brokenBadge.className = 'badge bg-secondary fs-6';
+                brokenBadge.textContent = item.broken_count || 0;
+                brokenCell.appendChild(brokenBadge);
+                row.appendChild(brokenCell);
+
+                tbody.appendChild(row);
+            });
         }
 
         // 渲染最高连板数趋势图
