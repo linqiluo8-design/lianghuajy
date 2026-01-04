@@ -282,6 +282,73 @@ class SectorAggregator:
         finally:
             cursor.close()
 
+    def aggregate_limit_reasons(self, trade_date: Optional[str] = None) -> int:
+        """
+        聚合涨停原因分析（辅助视图）
+
+        用途：分析涨停原因分类（板块轮动、政策利好等）
+        注意：这是辅助分析，不是主板块分类
+        """
+        # 自动连接数据库
+        if self.db_conn is None:
+            if not self.connect():
+                return 0
+
+        if trade_date is None:
+            trade_date = datetime.now().strftime('%Y-%m-%d')
+
+        cursor = self.db_conn.cursor()
+
+        try:
+            # 清理旧的涨停原因统计
+            cursor.execute("""
+                DELETE FROM limit_reason_stats
+                WHERE trade_date = %s
+            """, (trade_date,))
+
+            # 按涨停原因聚合
+            cursor.execute("""
+                INSERT INTO limit_reason_stats (
+                    trade_date, reason_name,
+                    limit_up_count, limit_down_count,
+                    one_word_count, broken_count,
+                    total_stocks, avg_change_pct,
+                    created_at
+                )
+                SELECT
+                    %s AS trade_date,
+                    TRIM(limit_reason) AS reason_name,
+                    SUM(CASE WHEN limit_type = 'limit_up' THEN 1 ELSE 0 END) AS limit_up_count,
+                    SUM(CASE WHEN limit_type = 'limit_down' THEN 1 ELSE 0 END) AS limit_down_count,
+                    SUM(CASE WHEN is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_count,
+                    SUM(CASE WHEN is_broken = TRUE THEN 1 ELSE 0 END) AS broken_count,
+                    COUNT(DISTINCT stock_code) AS total_stocks,
+                    AVG(change_pct) AS avg_change_pct,
+                    NOW() AS created_at
+                FROM daily_limit_stats
+                WHERE trade_date = %s
+                AND limit_reason IS NOT NULL
+                AND limit_reason != ''
+                AND limit_reason != '-'
+                GROUP BY reason_name
+                HAVING COUNT(*) > 0
+                ORDER BY limit_up_count DESC
+            """, (trade_date, trade_date))
+
+            rows_inserted = cursor.rowcount
+            self.db_conn.commit()
+
+            logger.info(f"📊 涨停原因聚合完成！插入 {rows_inserted} 条原因统计")
+
+            return rows_inserted
+
+        except Exception as e:
+            self.db_conn.rollback()
+            logger.error(f"❌ 涨停原因聚合失败: {e}")
+            return 0
+        finally:
+            cursor.close()
+
     def _aggregate_by_sectors(self, trade_date: str) -> int:
         """按细分板块聚合"""
         cursor = self.db_conn.cursor()
