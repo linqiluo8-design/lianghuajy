@@ -294,8 +294,16 @@ func getSectors(c *gin.Context) {
 func getSectorStats(c *gin.Context) {
 	date := c.Query("date")
 	if date == "" {
-		// 默认使用最新日期
-		date = time.Now().Format("2006-01-02")
+		// 查询数据库中实际存在的最新日期
+		var latestDate string
+		err := db.QueryRow("SELECT MAX(trade_date) FROM sector_daily_stats").Scan(&latestDate)
+		if err != nil || latestDate == "" {
+			// 如果查询失败或没有数据，使用今天日期
+			date = time.Now().Format("2006-01-02")
+		} else {
+			date = latestDate
+		}
+		log.Printf("📅 使用最新数据日期: %s", date)
 	}
 
 	query := `

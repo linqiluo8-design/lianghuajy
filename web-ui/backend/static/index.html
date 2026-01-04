@@ -267,12 +267,12 @@
     <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
 
     <script>
-        // 配置 - 使用今天的日期
-        const API_DATE = new Date().toISOString().split('T')[0]; // 格式: YYYY-MM-DD
+        // 配置
         let chart = null;
         let sectorDataCache = []; // 缓存板块数据，用于排序
+        let currentDataDate = null; // 当前数据日期（从API获取）
 
-        console.log(`📅 当前查询日期: ${API_DATE}`);
+        console.log(`📅 页面加载时间: ${new Date().toISOString().split('T')[0]}`);
 
         // 安全的 DOM 操作函数
         function setText(id, text) {
@@ -307,9 +307,10 @@
             }
         }
 
-        // 加载板块统计
+        // 加载板块统计（使用实际数据日期）
         async function loadSectorStats() {
-            const response = await fetch(`/api/v1/sectors/stats?date=${API_DATE}`);
+            // 使用空日期参数，让后端返回最新数据
+            const response = await fetch('/api/v1/sectors/stats');
             const result = await response.json();
 
             if (result.code !== 200 || !Array.isArray(result.data)) {
@@ -318,6 +319,17 @@
             }
 
             const data = result.data;
+
+            // 从返回数据中提取实际日期
+            if (data.length > 0 && data[0].trade_date) {
+                currentDataDate = data[0].trade_date;
+                setText('currentDate', currentDataDate);
+                console.log(`📅 实际数据日期: ${currentDataDate}`);
+            } else if (!currentDataDate) {
+                // 如果没有数据，显示今天日期
+                currentDataDate = new Date().toISOString().split('T')[0];
+                setText('currentDate', currentDataDate + ' (无数据)');
+            }
 
             // 更新统计卡片
             const totals = data.reduce((acc, item) => ({
@@ -351,7 +363,8 @@
 
         // 加载板块强度
         async function loadSectorStrength() {
-            const response = await fetch(`/api/v1/sector-strength?date=${API_DATE}&limit=20`);
+            const date = currentDataDate || new Date().toISOString().split('T')[0];
+            const response = await fetch(`/api/v1/sector-strength?date=${date}&limit=20`);
             const result = await response.json();
 
             if (result.code !== 200 || !Array.isArray(result.data)) {
@@ -703,7 +716,8 @@
                 stockModal.show();
 
                 // 构建 URL 参数
-                let url = `/api/v1/sector-stocks?date=${API_DATE}&sector_name=${encodeURIComponent(sectorName)}`;
+                const date = currentDataDate || new Date().toISOString().split('T')[0];
+                let url = `/api/v1/sector-stocks?date=${date}&sector_name=${encodeURIComponent(sectorName)}`;
 
                 // 处理不同的查询类型
                 if (limitType === 'one_word_limit_up') {
