@@ -22,6 +22,7 @@ import yaml
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from services.data_sources import AkShareSource, PytdxSource
+from services.sector_aggregator import SectorAggregator
 
 # 配置日志
 logging.basicConfig(
@@ -56,6 +57,10 @@ class RealtimeFetcher:
         # 统计信息
         self.fetch_count = 0
         self.error_count = 0
+
+        # 板块聚合器（每次采集后聚合数据）
+        self.aggregator = SectorAggregator()
+        self.aggregator.db_conn = self.db_conn  # 复用数据库连接
 
     def _load_config(self, config_path: str) -> dict:
         """加载配置文件"""
@@ -158,6 +163,10 @@ class RealtimeFetcher:
 
             # 保存到数据库
             saved_count = self._save_to_database(df_filtered)
+
+            # 聚合板块统计
+            if saved_count > 0:
+                self.aggregator.aggregate()
 
             self.fetch_count += 1
             logger.info(f"📊 第 {self.fetch_count} 次采集: 总数={len(df)}, "
