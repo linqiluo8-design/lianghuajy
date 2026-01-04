@@ -1,0 +1,75 @@
+# ============================================
+# 实时行情采集配置文件
+# ============================================
+
+# 数据源配置
+data_source:
+  # 数据源类型: akshare 或 pytdx
+  # - akshare: 免费，延迟3-5秒，稳定性较好，无需安装其他软件
+  # - pytdx: 免费，延迟2-3秒，稳定性最好，基于通达信
+  type: akshare
+
+  # 刷新间隔（秒）
+  refresh_interval: 2
+
+# AkShare 配置（type=akshare时生效）
+akshare:
+  # AkShare 无需额外配置，开箱即用
+  timeout: 10  # 请求超时时间（秒）
+
+# pytdx 配置（type=pytdx时生效）
+pytdx:
+  # 通达信服务器列表（自动选择最快的）
+  servers:
+    - ['119.147.212.81', 7709]  # 深圳行情
+    - ['114.80.63.12', 7709]    # 上海行情1
+    - ['114.80.63.35', 7709]    # 上海行情2
+    - ['60.12.136.250', 7709]   # 备用服务器1
+    - ['115.238.90.165', 7709]  # 备用服务器2
+
+  # 连接超时（秒）
+  timeout: 5
+
+# 数据库配置
+database:
+  host: localhost
+  port: 5432
+  database: funcat
+  user: funcat_user
+  password: funcat_password
+
+# 数据过滤配置
+filter:
+  # 只保存涨跌停股票（节省存储空间）
+  only_limit: true
+
+  # 最低价格过滤（过滤仙股，单位：元）
+  min_price: 1.0
+
+  # 排除ST股票
+  exclude_st: false
+
+# 日志配置
+logging:
+  level: INFO  # DEBUG, INFO, WARNING, ERROR
+
+  # 日志文件路径
+  file: logs/realtime_fetcher.log
+
+  # 日志轮转
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# 监控告警配置（可选）
+monitor:
+  # 启用监控
+  enabled: false
+
+  # 连续失败N次后告警
+  alert_threshold: 10
+
+  # 告警方式：email, webhook
+  alert_method: webhook
+
+  # Webhook URL
+  webhook_url: ""

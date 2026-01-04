@@ -1,0 +1,947 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>Funcat 涨跌停数据看板</title>
+
+    <!-- Bootstrap 5 CSS - 使用国内CDN -->
+    <link href="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
+
+    <!-- ECharts - 使用国内CDN -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/echarts/5.4.3/echarts.min.js"></script>
+
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px 0;
+        }
+        .card {
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: none;
+            border-radius: 10px;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+            transition: transform 0.3s;
+        }
+        .stat-card:hover {
+            transform: translateY(-5px);
+        }
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            margin: 10px 0;
+        }
+        .stat-label {
+            color: #6c757d;
+            font-size: 0.9rem;
+        }
+        #chart {
+            width: 100%;
+            height: 400px;
+        }
+        .table-container {
+            max-height: 500px;
+            overflow-y: auto;
+        }
+        .badge-S { background-color: #dc3545; }
+        .badge-A-plus { background-color: #fd7e14; }
+        .badge-A { background-color: #ffc107; }
+        .badge-B { background-color: #0dcaf0; }
+        .badge-C { background-color: #6c757d; }
+        .clickable-badge {
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+        .clickable-badge:hover {
+            transform: scale(1.1);
+            opacity: 0.8;
+        }
+        .stock-modal .modal-dialog {
+            max-width: 90%;
+        }
+        .stock-detail-table {
+            font-size: 0.9rem;
+        }
+        .stock-detail-table th {
+            background-color: #f8f9fa;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 头部 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h1 class="card-title mb-2">📊 Funcat 涨跌停数据看板</h1>
+                <p class="card-text text-muted mb-3">实时监控市场热点 · 板块涨停统计 · 连板天梯</p>
+
+                <div class="d-flex align-items-center gap-2 flex-wrap">
+                    <button class="btn btn-primary" onclick="loadData()">🔄 刷新数据</button>
+                    <button class="btn btn-danger" onclick="window.location.href='/static/yangjia.html'">
+                        🔥 炒股养家心法选股
+                    </button>
+
+                    <!-- 数据源选择器 -->
+                    <div class="d-flex align-items-center gap-2">
+                        <label for="dataSourceSelect" class="form-label mb-0 text-muted">数据源:</label>
+                        <select id="dataSourceSelect" class="form-select form-select-sm" style="width: 180px;" onchange="handleDataSourceChange()">
+                            <option value="akshare">AkShare (3-5秒延迟)</option>
+                            <option value="pytdx">通达信 (2-3秒延迟)</option>
+                        </select>
+                    </div>
+
+                    <span class="text-muted">
+                        <small>
+                            <span id="dataSourceStatus" class="badge bg-secondary">未启动</span>
+                            | 数据日期: <strong id="currentDate">2025-12-30</strong>
+                        </small>
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 统计卡片 -->
+        <div class="row g-3 mb-4">
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-danger" id="totalLimitUp">0</div>
+                    <div class="stat-label">涨停家数</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-primary" id="totalOneWord">0</div>
+                    <div class="stat-label">一字涨停</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-success" id="totalLimitDown">0</div>
+                    <div class="stat-label">跌停家数</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-success" id="totalOneWordDown">0</div>
+                    <div class="stat-label">一字跌停</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-warning" id="totalBroken">0</div>
+                    <div class="stat-label">炸板总数</div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card stat-card">
+                    <div class="stat-value text-info" id="totalStocks">0</div>
+                    <div class="stat-label">交易股票</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 图表 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">📊 板块涨停排行</h5>
+                <div id="chart"></div>
+            </div>
+        </div>
+
+        <!-- 最高连板数趋势图 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">📈 最高连板数趋势（近30天）</h5>
+                <div id="highestBoardChart" style="width: 100%; height: 350px;"></div>
+            </div>
+        </div>
+
+        <!-- 板块强度排行 -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <h5 class="card-title">🔥 板块强度排行</h5>
+                <div class="table-container">
+                    <table class="table table-striped table-hover">
+                        <thead class="table-dark sticky-top">
+                            <tr>
+                                <th>排名</th>
+                                <th>板块名称</th>
+                                <th>等级</th>
+                                <th>强度分数</th>
+                                <th>涨停数</th>
+                                <th>一字涨停</th>
+                                <th>跌停数</th>
+                                <th>一字跌停</th>
+                                <th>平均涨幅%</th>
+                            </tr>
+                        </thead>
+                        <tbody id="strengthTable">
+                            <tr>
+                                <td colspan="9" class="text-center text-muted">加载中...</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 个股详情模态框 -->
+    <div class="modal fade stock-modal" id="stockModal" tabindex="-1" aria-labelledby="stockModalLabel" aria-hidden="true">
+        <div class="modal-dialog modal-xl">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="stockModalLabel">个股详情</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div style="max-height: 70vh; overflow-y: auto;">
+                        <table class="table table-bordered table-hover stock-detail-table">
+                            <thead>
+                                <tr>
+                                    <th>代码</th>
+                                    <th>名称</th>
+                                    <th>涨幅%</th>
+                                    <th>开盘涨幅%</th>
+                                    <th id="thLimitType">类型</th>
+                                    <th id="thConsecutiveDays">连板天数</th>
+                                    <th>几天几板</th>
+                                    <th id="thLimitReason">涨停原因</th>
+                                    <th>所属行业</th>
+                                    <th>换手%</th>
+                                    <th id="thFirstLimitTime">首次涨停时间</th>
+                                    <th>成交额(亿)</th>
+                                    <th>昨日封单(万)</th>
+                                    <th>今日封单(万)</th>
+                                    <th>概念题材</th>
+                                </tr>
+                            </thead>
+                            <tbody id="stockDetailTable">
+                                <tr>
+                                    <td colspan="15" class="text-center text-muted">加载中...</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">关闭</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS - 使用国内CDN -->
+    <script src="https://cdn.bootcdn.net/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
+
+    <script>
+        // 配置 - 使用今天的日期
+        const API_DATE = new Date().toISOString().split('T')[0]; // 格式: YYYY-MM-DD
+        let chart = null;
+
+        console.log(`📅 当前查询日期: ${API_DATE}`);
+
+        // 安全的 DOM 操作函数
+        function setText(id, text) {
+            const el = document.getElementById(id);
+            if (el) el.textContent = text || '0';
+        }
+
+        function safeNumber(val, digits = 0) {
+            const num = parseFloat(val);
+            return isNaN(num) ? '0' : num.toFixed(digits);
+        }
+
+        function safeMoney(val) {
+            const num = parseFloat(val);
+            if (isNaN(num) || num === 0) return '0';
+            if (num >= 100000000) return (num / 100000000).toFixed(2) + '亿';
+            if (num >= 10000) return (num / 10000).toFixed(2) + '万';
+            return num.toFixed(2);
+        }
+
+        // 加载数据
+        async function loadData() {
+            try {
+                await Promise.all([
+                    loadSectorStats(),
+                    loadSectorStrength(),
+                    loadHighestBoardTrend()
+                ]);
+            } catch (error) {
+                console.error('加载数据失败:', error);
+                alert('加载数据失败，请重试');
+            }
+        }
+
+        // 加载板块统计
+        async function loadSectorStats() {
+            const response = await fetch(`/api/v1/sectors/stats?date=${API_DATE}`);
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('板块统计数据异常:', result);
+                return;
+            }
+
+            const data = result.data;
+
+            // 更新统计卡片
+            const totals = data.reduce((acc, item) => ({
+                limitUp: acc.limitUp + (item.limit_up_count || 0),
+                limitDown: acc.limitDown + (item.limit_down_count || 0),
+                oneWord: acc.oneWord + (item.one_word_count || 0),
+                oneWordDown: acc.oneWordDown + (item.one_word_limit_down_count || 0),
+                broken: acc.broken + (item.broken_count || 0),
+                stocks: acc.stocks + (item.total_stocks || 0)
+            }), { limitUp: 0, limitDown: 0, oneWord: 0, oneWordDown: 0, broken: 0, stocks: 0 });
+
+            setText('totalLimitUp', totals.limitUp);
+            setText('totalLimitDown', totals.limitDown);
+            setText('totalOneWord', totals.oneWord);
+            setText('totalOneWordDown', totals.oneWordDown);
+            setText('totalBroken', totals.broken);
+            setText('totalStocks', totals.stocks);
+
+            // 渲染图表
+            renderChart(data.slice(0, 10));
+        }
+
+        // 加载板块强度
+        async function loadSectorStrength() {
+            const response = await fetch(`/api/v1/sector-strength?date=${API_DATE}&limit=20`);
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('板块强度数据异常:', result);
+                return;
+            }
+
+            renderStrengthTable(result.data);
+        }
+
+        // 加载最高连板数趋势
+        async function loadHighestBoardTrend() {
+            const response = await fetch('/api/v1/daily-highest-board?days=30');
+            const result = await response.json();
+
+            if (result.code !== 200 || !Array.isArray(result.data)) {
+                console.warn('最高连板数数据异常:', result);
+                return;
+            }
+
+            renderHighestBoardChart(result.data);
+        }
+
+        // 渲染图表
+        function renderChart(data) {
+            if (!data || data.length === 0) return;
+
+            if (!chart) {
+                chart = echarts.init(document.getElementById('chart'));
+            }
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    axisPointer: { type: 'shadow' }
+                },
+                legend: {
+                    data: ['涨停', '一字板', '炸板']
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '3%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'value'
+                },
+                yAxis: {
+                    type: 'category',
+                    data: data.map(item => item.sector_name || '')
+                },
+                series: [
+                    {
+                        name: '涨停',
+                        type: 'bar',
+                        data: data.map(item => item.limit_up_count || 0),
+                        itemStyle: { color: '#dc3545' }
+                    },
+                    {
+                        name: '一字板',
+                        type: 'bar',
+                        data: data.map(item => item.one_word_count || 0),
+                        itemStyle: { color: '#ffc107' }
+                    },
+                    {
+                        name: '炸板',
+                        type: 'bar',
+                        data: data.map(item => item.broken_count || 0),
+                        itemStyle: { color: '#6c757d' }
+                    }
+                ]
+            };
+
+            chart.setOption(option);
+        }
+
+        // 渲染最高连板数趋势图
+        function renderHighestBoardChart(data) {
+            if (!data || data.length === 0) return;
+
+            const highestBoardChart = echarts.init(document.getElementById('highestBoardChart'));
+
+            const dates = data.map(item => item.trade_date.substring(5)); // 只显示月-日
+            const highestBoards = data.map(item => item.highest_board || 0);
+            const totalLimitUp = data.map(item => item.total_limit_up_count || 0);
+
+            const option = {
+                tooltip: {
+                    trigger: 'axis',
+                    formatter: function(params) {
+                        let result = params[0].name + '<br/>';
+                        params.forEach(param => {
+                            result += `${param.marker}${param.seriesName}: ${param.value}<br/>`;
+                        });
+                        return result;
+                    }
+                },
+                legend: {
+                    data: ['最高连板数', '涨停总数']
+                },
+                grid: {
+                    left: '3%',
+                    right: '4%',
+                    bottom: '10%',
+                    containLabel: true
+                },
+                xAxis: {
+                    type: 'category',
+                    boundaryGap: false,
+                    data: dates,
+                    axisLabel: {
+                        rotate: 45,
+                        interval: Math.floor(dates.length / 10) // 自适应显示间隔
+                    }
+                },
+                yAxis: [
+                    {
+                        type: 'value',
+                        name: '连板数',
+                        position: 'left',
+                        axisLabel: {
+                            formatter: '{value}'
+                        }
+                    },
+                    {
+                        type: 'value',
+                        name: '涨停总数',
+                        position: 'right',
+                        axisLabel: {
+                            formatter: '{value}'
+                        }
+                    }
+                ],
+                series: [
+                    {
+                        name: '最高连板数',
+                        type: 'line',
+                        yAxisIndex: 0,
+                        data: highestBoards,
+                        smooth: true,
+                        itemStyle: { color: '#dc3545' },
+                        areaStyle: {
+                            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                                { offset: 0, color: 'rgba(220, 53, 69, 0.3)' },
+                                { offset: 1, color: 'rgba(220, 53, 69, 0.05)' }
+                            ])
+                        },
+                        emphasis: {
+                            focus: 'series'
+                        }
+                    },
+                    {
+                        name: '涨停总数',
+                        type: 'line',
+                        yAxisIndex: 1,
+                        data: totalLimitUp,
+                        smooth: true,
+                        itemStyle: { color: '#0dcaf0' },
+                        emphasis: {
+                            focus: 'series'
+                        }
+                    }
+                ]
+            };
+
+            highestBoardChart.setOption(option);
+
+            // 窗口大小改变时重绘
+            window.addEventListener('resize', function() {
+                highestBoardChart.resize();
+            });
+        }
+
+        // 渲染板块强度表格
+        function renderStrengthTable(data) {
+            const tbody = document.getElementById('strengthTable');
+            tbody.innerHTML = '';
+
+            if (!data || data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted">暂无数据</td></tr>';
+                return;
+            }
+
+            data.forEach((item, index) => {
+                const row = document.createElement('tr');
+
+                // 排名
+                const rankCell = document.createElement('td');
+                const rankStrong = document.createElement('strong');
+                rankStrong.textContent = index + 1;
+                rankCell.appendChild(rankStrong);
+                row.appendChild(rankCell);
+
+                // 板块名称
+                const nameCell = document.createElement('td');
+                const nameStrong = document.createElement('strong');
+                nameStrong.className = 'text-dark';
+                nameStrong.textContent = item.sector_name || '-';
+                nameCell.appendChild(nameStrong);
+                row.appendChild(nameCell);
+
+                // 等级
+                const gradeCell = document.createElement('td');
+                const gradeBadge = document.createElement('span');
+                const grade = item.strength_grade || 'C';
+                gradeBadge.className = `badge badge-${grade.replace('+', '-plus')} fw-bold`;
+                gradeBadge.textContent = grade;
+                gradeCell.appendChild(gradeBadge);
+                row.appendChild(gradeCell);
+
+                // 强度分数
+                const scoreCell = document.createElement('td');
+                const scoreStrong = document.createElement('strong');
+                scoreStrong.className = 'text-danger';
+                scoreStrong.textContent = safeNumber(item.strength_score, 1);
+                scoreCell.appendChild(scoreStrong);
+                row.appendChild(scoreCell);
+
+                // 涨停数
+                const limitUpCell = document.createElement('td');
+                const limitUpBadge = document.createElement('span');
+                const limitUpCount = item.limit_up_count || 0;
+                limitUpBadge.className = limitUpCount > 0 ? 'badge bg-danger fw-bold clickable-badge' : 'badge bg-danger fw-bold';
+                limitUpBadge.textContent = limitUpCount;
+                if (limitUpCount > 0) {
+                    limitUpBadge.title = '点击查看涨停个股';
+                    limitUpBadge.onclick = () => showSectorStocks(item.sector_name, 'limit_up', '涨停');
+                }
+                limitUpCell.appendChild(limitUpBadge);
+                row.appendChild(limitUpCell);
+
+                // 一字涨停
+                const oneWordCell = document.createElement('td');
+                const oneWordCount = item.one_word_count || 0;
+                const oneWordBadge = document.createElement('span');
+                oneWordBadge.className = oneWordCount > 0 ? 'badge bg-warning text-dark fw-bold clickable-badge' : 'text-dark fw-bold';
+                oneWordBadge.textContent = oneWordCount;
+                if (oneWordCount > 0) {
+                    oneWordBadge.title = '点击查看一字涨停个股';
+                    oneWordBadge.onclick = () => showSectorStocks(item.sector_name, 'one_word_limit_up', '一字涨停');
+                }
+                oneWordCell.appendChild(oneWordBadge);
+                row.appendChild(oneWordCell);
+
+                // 跌停数
+                const limitDownCell = document.createElement('td');
+                const limitDownCount = item.limit_down_count || 0;
+                if (limitDownCount > 0) {
+                    const limitDownBadge = document.createElement('span');
+                    limitDownBadge.className = 'badge bg-success fw-bold clickable-badge';
+                    limitDownBadge.textContent = limitDownCount;
+                    limitDownBadge.title = '点击查看跌停个股';
+                    limitDownBadge.onclick = () => showSectorStocks(item.sector_name, 'limit_down', '跌停');
+                    limitDownCell.appendChild(limitDownBadge);
+                } else {
+                    const limitDownText = document.createElement('span');
+                    limitDownText.className = 'text-muted';
+                    limitDownText.textContent = '0';
+                    limitDownCell.appendChild(limitDownText);
+                }
+                row.appendChild(limitDownCell);
+
+                // 一字跌停
+                const oneWordDownCell = document.createElement('td');
+                const oneWordDownCount = item.one_word_limit_down_count || 0;
+                const oneWordDownBadge = document.createElement('span');
+                oneWordDownBadge.className = oneWordDownCount > 0 ? 'badge bg-success fw-bold clickable-badge' : 'text-muted';
+                oneWordDownBadge.textContent = oneWordDownCount || '0';
+                if (oneWordDownCount > 0) {
+                    oneWordDownBadge.title = '点击查看一字跌停个股';
+                    oneWordDownBadge.onclick = () => showSectorStocks(item.sector_name, 'one_word_limit_down', '一字跌停');
+                }
+                oneWordDownCell.appendChild(oneWordDownBadge);
+                row.appendChild(oneWordDownCell);
+
+                // 平均涨幅
+                const avgChangeCell = document.createElement('td');
+                const avgChangeSpan = document.createElement('span');
+                const avgChange = parseFloat(item.avg_change_pct) || 0;
+                avgChangeSpan.className = avgChange >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                avgChangeSpan.textContent = safeNumber(item.avg_change_pct, 2) + '%';
+                avgChangeCell.appendChild(avgChangeSpan);
+                row.appendChild(avgChangeCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // 页面加载时自动获取数据
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('✅ 页面加载完成，开始获取数据');
+            loadData();
+        });
+
+        // 窗口大小改变时重绘图表
+        window.addEventListener('resize', function() {
+            if (chart) chart.resize();
+        });
+
+        // ============================================
+        // 个股详情功能
+        // ============================================
+
+        let stockModal = null;
+
+        // 显示板块个股详情
+        async function showSectorStocks(sectorName, limitType, typeName) {
+            try {
+                // 初始化模态框（如果还没有初始化）
+                if (!stockModal) {
+                    stockModal = new bootstrap.Modal(document.getElementById('stockModal'));
+                }
+
+                // 更新模态框标题
+                const modalTitle = document.getElementById('stockModalLabel');
+                modalTitle.textContent = `${sectorName} - ${typeName}个股`;
+
+                // 根据类型更新表头
+                const isLimitDown = limitType.includes('limit_down');
+                document.getElementById('thLimitType').textContent = isLimitDown ? '跌停类型' : '涨停类型';
+                document.getElementById('thConsecutiveDays').textContent = isLimitDown ? '连续跌停天数' : '连续涨停天数';
+                document.getElementById('thLimitReason').textContent = isLimitDown ? '跌停原因' : '涨停原因';
+                document.getElementById('thFirstLimitTime').textContent = isLimitDown ? '首次跌停时间' : '首次涨停时间';
+
+                // 显示加载状态
+                const tbody = document.getElementById('stockDetailTable');
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">加载中...</td></tr>';
+
+                // 打开模态框
+                stockModal.show();
+
+                // 构建 URL 参数
+                let url = `/api/v1/sector-stocks?date=${API_DATE}&sector_name=${encodeURIComponent(sectorName)}`;
+
+                // 处理不同的查询类型
+                if (limitType === 'one_word_limit_up') {
+                    // 一字涨停：过滤涨停类型 + 一字板
+                    url += '&limit_type=limit_up&is_one_word=true';
+                } else if (limitType === 'one_word_limit_down') {
+                    // 一字跌停：过滤跌停类型 + 一字板
+                    url += '&limit_type=limit_down&is_one_word=true';
+                } else {
+                    // 普通涨停或跌停
+                    url += `&limit_type=${limitType}`;
+                }
+
+                // 加载数据
+                const response = await fetch(url);
+                const result = await response.json();
+
+                if (result.code !== 200 || !Array.isArray(result.data)) {
+                    tbody.innerHTML = '<tr><td colspan="15" class="text-center text-danger">加载失败</td></tr>';
+                    console.error('个股数据加载失败:', result);
+                    return;
+                }
+
+                // 渲染数据
+                renderStockDetailTable(result.data);
+            } catch (error) {
+                console.error('加载个股详情失败:', error);
+                const tbody = document.getElementById('stockDetailTable');
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-danger">加载失败</td></tr>';
+            }
+        }
+
+        // 渲染个股详情表格
+        function renderStockDetailTable(stocks) {
+            const tbody = document.getElementById('stockDetailTable');
+            tbody.innerHTML = '';
+
+            if (!stocks || stocks.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="15" class="text-center text-muted">暂无数据</td></tr>';
+                return;
+            }
+
+            stocks.forEach(stock => {
+                const row = document.createElement('tr');
+
+                // 代码
+                const codeCell = document.createElement('td');
+                codeCell.textContent = stock.stock_code || '-';
+                row.appendChild(codeCell);
+
+                // 名称
+                const nameCell = document.createElement('td');
+                const nameStrong = document.createElement('strong');
+                nameStrong.textContent = stock.stock_name || '-';
+                nameCell.appendChild(nameStrong);
+                row.appendChild(nameCell);
+
+                // 涨幅%
+                const changePctCell = document.createElement('td');
+                const changePctSpan = document.createElement('span');
+                const changePct = parseFloat(stock.change_pct) || 0;
+                changePctSpan.className = changePct >= 0 ? 'text-danger fw-bold' : 'text-success fw-bold';
+                changePctSpan.textContent = safeNumber(stock.change_pct, 2) + '%';
+                changePctCell.appendChild(changePctSpan);
+                row.appendChild(changePctCell);
+
+                // 开盘涨幅%
+                const openChangePctCell = document.createElement('td');
+                const openChangePct = parseFloat(stock.open_change_pct) || 0;
+                const openChangePctSpan = document.createElement('span');
+                openChangePctSpan.className = openChangePct >= 0 ? 'text-danger' : 'text-success';
+                openChangePctSpan.textContent = safeNumber(stock.open_change_pct, 2) + '%';
+                openChangePctCell.appendChild(openChangePctSpan);
+                row.appendChild(openChangePctCell);
+
+                // 类型
+                const typeCell = document.createElement('td');
+                const typeBadge = document.createElement('span');
+                if (stock.limit_type === 'limit_up') {
+                    typeBadge.className = 'badge bg-danger';
+                    typeBadge.textContent = stock.is_one_word ? '一字涨停' : '涨停';
+                } else if (stock.limit_type === 'limit_down') {
+                    typeBadge.className = 'badge bg-success';
+                    typeBadge.textContent = stock.is_one_word ? '一字跌停' : '跌停';
+                } else {
+                    typeBadge.className = 'badge bg-secondary';
+                    typeBadge.textContent = stock.limit_type || '-';
+                }
+                if (stock.is_broken) {
+                    const brokenBadge = document.createElement('span');
+                    brokenBadge.className = 'badge bg-warning ms-1';
+                    brokenBadge.textContent = stock.is_resealed ? '回封' : '炸板';
+                    typeCell.appendChild(typeBadge);
+                    typeCell.appendChild(brokenBadge);
+                } else {
+                    typeCell.appendChild(typeBadge);
+                }
+                row.appendChild(typeCell);
+
+                // 连板天数
+                const consecutiveCell = document.createElement('td');
+                const consecutiveText = document.createElement('strong');
+                consecutiveText.className = stock.consecutive_limit_days >= 3 ? 'text-danger' : '';
+                consecutiveText.textContent = stock.consecutive_limit_days || 1;
+                consecutiveCell.appendChild(consecutiveText);
+                row.appendChild(consecutiveCell);
+
+                // 几天几板
+                const boardCell = document.createElement('td');
+                const boardBadge = document.createElement('span');
+                const days = stock.consecutive_limit_days || 1;
+                if (days >= 5) {
+                    boardBadge.className = 'badge bg-danger';
+                } else if (days >= 3) {
+                    boardBadge.className = 'badge bg-warning';
+                } else {
+                    boardBadge.className = 'badge bg-info';
+                }
+                boardBadge.textContent = stock.board_description || '-';
+                boardCell.appendChild(boardBadge);
+                row.appendChild(boardCell);
+
+                // 涨停原因
+                const reasonCell = document.createElement('td');
+                reasonCell.textContent = stock.limit_reason || '-';
+                reasonCell.style.maxWidth = '200px';
+                reasonCell.style.overflow = 'hidden';
+                reasonCell.style.textOverflow = 'ellipsis';
+                reasonCell.title = stock.limit_reason || '';
+                row.appendChild(reasonCell);
+
+                // 所属行业
+                const industryCell = document.createElement('td');
+                industryCell.textContent = stock.industry || stock.sector_name || '-';
+                row.appendChild(industryCell);
+
+                // 换手%
+                const turnoverRateCell = document.createElement('td');
+                turnoverRateCell.textContent = safeNumber(stock.turnover_rate, 2) + '%';
+                row.appendChild(turnoverRateCell);
+
+                // 首次涨停时间
+                const firstLimitTimeCell = document.createElement('td');
+                const timeText = stock.first_limit_time || '-';
+                firstLimitTimeCell.textContent = timeText.substring(0, 5); // 只显示 HH:MM
+                row.appendChild(firstLimitTimeCell);
+
+                // 成交额(亿)
+                const turnoverCell = document.createElement('td');
+                turnoverCell.textContent = safeNumber(stock.turnover / 100000000, 2);
+                row.appendChild(turnoverCell);
+
+                // 昨日封单(万)
+                const yesterdayAuctionCell = document.createElement('td');
+                yesterdayAuctionCell.textContent = safeNumber(stock.yesterday_auction_unmatched / 10000, 0);
+                row.appendChild(yesterdayAuctionCell);
+
+                // 今日封单(万)
+                const todayAuctionCell = document.createElement('td');
+                todayAuctionCell.textContent = safeNumber(stock.today_auction_unmatched / 10000, 0);
+                row.appendChild(todayAuctionCell);
+
+                // 概念题材
+                const conceptCell = document.createElement('td');
+                conceptCell.textContent = stock.concept_tags || '-';
+                conceptCell.style.maxWidth = '200px';
+                conceptCell.style.overflow = 'hidden';
+                conceptCell.style.textOverflow = 'ellipsis';
+                conceptCell.title = stock.concept_tags || '';
+                row.appendChild(conceptCell);
+
+                tbody.appendChild(row);
+            });
+        }
+
+        // ============================================
+        // 数据源切换功能
+        // ============================================
+
+        /**
+         * 处理数据源切换
+         */
+        async function handleDataSourceChange() {
+            const select = document.getElementById('dataSourceSelect');
+            const newSource = select.value;
+            const statusBadge = document.getElementById('dataSourceStatus');
+
+            console.log(`切换数据源到: ${newSource}`);
+
+            // 更新状态
+            statusBadge.textContent = '切换中...';
+            statusBadge.className = 'badge bg-warning';
+
+            try {
+                // 调用后端 API 切换数据源
+                const response = await fetch('/api/v1/realtime/switch-source', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        source: newSource
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.code === 200) {
+                    statusBadge.textContent = '运行中 (' + newSource + ')';
+                    statusBadge.className = 'badge bg-success';
+
+                    // 保存到 localStorage
+                    localStorage.setItem('dataSource', newSource);
+
+                    // 提示用户
+                    console.log(`✅ 数据源已切换为: ${newSource}`);
+                } else {
+                    throw new Error(result.message || '切换失败');
+                }
+            } catch (error) {
+                console.error('❌ 切换数据源失败:', error);
+                statusBadge.textContent = '切换失败';
+                statusBadge.className = 'badge bg-danger';
+
+                // 恢复之前的选择
+                const previousSource = localStorage.getItem('dataSource') || 'akshare';
+                select.value = previousSource;
+
+                alert(`数据源切换失败: ${error.message}\n\n请确保实时采集服务已启动。`);
+            }
+        }
+
+        /**
+         * 检查实时服务状态
+         */
+        async function checkRealtimeStatus() {
+            const statusBadge = document.getElementById('dataSourceStatus');
+
+            try {
+                const response = await fetch('/api/v1/realtime/status');
+                const result = await response.json();
+
+                if (result.code === 200 && result.data) {
+                    const status = result.data;
+
+                    if (status.running) {
+                        statusBadge.textContent = `运行中 (${status.source})`;
+                        statusBadge.className = 'badge bg-success';
+
+                        // 更新下拉框
+                        document.getElementById('dataSourceSelect').value = status.source;
+
+                        // 更新统计
+                        console.log(`实时服务状态: 运行中 | 数据源: ${status.source} | 采集次数: ${status.fetch_count}`);
+                    } else {
+                        statusBadge.textContent = '未启动';
+                        statusBadge.className = 'badge bg-secondary';
+                    }
+                } else {
+                    statusBadge.textContent = '未知';
+                    statusBadge.className = 'badge bg-secondary';
+                }
+            } catch (error) {
+                console.error('检查服务状态失败:', error);
+                statusBadge.textContent = '离线';
+                statusBadge.className = 'badge bg-danger';
+            }
+        }
+
+        /**
+         * 初始化数据源选择
+         */
+        function initDataSource() {
+            // 从 localStorage 读取上次选择的数据源
+            const savedSource = localStorage.getItem('dataSource');
+            if (savedSource) {
+                document.getElementById('dataSourceSelect').value = savedSource;
+            }
+
+            // 检查服务状态
+            checkRealtimeStatus();
+
+            // 每10秒检查一次状态
+            setInterval(checkRealtimeStatus, 10000);
+        }
+
+        // 页面加载时初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            initDataSource();
+        });
+    </script>
+</body>
+</html>

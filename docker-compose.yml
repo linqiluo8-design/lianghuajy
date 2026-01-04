@@ -1,5 +1,3 @@
-version: '3.8'
-
 # ============================================
 # Funcat 混合架构 - Docker Compose 配置
 # ============================================
@@ -28,6 +26,10 @@ services:
       # 初始化SQL脚本
       - ./deployment/sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./deployment/sql/init_data.sql:/docker-entrypoint-initdb.d/02-init_data.sql:ro
+      - ./deployment/sql/webui_tables.sql:/docker-entrypoint-initdb.d/03-webui_tables.sql:ro
+      - ./deployment/sql/05-yangjia_schema_fixed.sql:/docker-entrypoint-initdb.d/05-yangjia_schema_fixed.sql:ro
+      - ./deployment/sql/06-sector_strength.sql:/docker-entrypoint-initdb.d/06-sector_strength.sql:ro
+      - ./deployment/sql/test_data.sql:/docker-entrypoint-initdb.d/07-test_data.sql:ro
       # 自定义配置
       - ./deployment/config/postgresql.conf:/etc/postgresql/postgresql.conf:ro
 
@@ -95,29 +97,28 @@ services:
   # InfluxDB 时序数据库 (可选)
   # ==========================================
   influxdb:
-    image: influxdb:2.0-alpine
+    image: docker.io/library/influxdb:3.5.0-core
     container_name: funcat-influxdb
     restart: unless-stopped
 
     environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_ADMIN_USER:-admin}
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_ADMIN_PASSWORD:-influxdb_password_change_me}
-      DOCKER_INFLUXDB_INIT_ORG: funcat
-      DOCKER_INFLUXDB_INIT_BUCKET: stock_data
-      DOCKER_INFLUXDB_INIT_RETENTION: 30d
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_ADMIN_TOKEN:-my-super-secret-auth-token}
+      # InfluxDB 3.x 配置
+      LOG_FILTER: ${INFLUXDB_LOG_LEVEL:-info}
+      INFLUXDB3_DATA_DIR: /home/influxdb3/.influxdb3
+      INFLUXDB_IOX_DB_DIR: /var/lib/influxdb3
 
     ports:
-      - "${INFLUXDB_PORT:-8086}:8086"
+      # InfluxDB 3.x 使用 8181 端口（不是 8086）
+      - "${INFLUXDB_PORT:-8181}:8181"
 
     volumes:
-      # 数据持久化
-      - influxdb_data:/var/lib/influxdb2
-      - influxdb_config:/etc/influxdb2
+      # 数据持久化（3.x 数据目录）
+      - influxdb_data:/var/lib/influxdb3
+      - influxdb_home:/home/influxdb3
 
     healthcheck:
-      test: ["CMD", "influx", "ping"]
+      # InfluxDB 3.x 健康检查
+      test: ["CMD", "curl", "-f", "http://localhost:8181/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -204,15 +205,15 @@ services:
           memory: 512M
 
   # ==========================================
-  # Funcat API 服务 (可选)
+  # Funcat Web UI 服务 (涨跌停数据看板)
   # ==========================================
-  api:
+  webui:
     build:
-      context: ./api
+      context: ./web-ui/backend
       dockerfile: Dockerfile
 
-    image: funcat/api:2.0.0
-    container_name: funcat-api
+    image: funcat/webui:2.0.0
+    container_name: funcat-webui
     restart: unless-stopped
 
     depends_on:
@@ -237,17 +238,13 @@ services:
       TZ: Asia/Shanghai
 
     ports:
-      - "${API_PORT:-8080}:8080"
-
-    volumes:
-      - ./deployment/config/api.yaml:/app/config/api.yaml:ro
-      - api_logs:/app/logs
+      - "${WEBUI_PORT:-8080}:8080"
 
     networks:
       - funcat-network
 
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/health"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -268,9 +265,60 @@ services:
           cpus: '0.25'
           memory: 256M
 
-    # 可选服务
-    profiles:
-      - full
+  # ==========================================
+  # Real-time Data Fetcher Service (实时行情采集)
+  # ==========================================
+  realtime:
+    build:
+      context: .
+      dockerfile: deployment/docker/Dockerfile.realtime
+
+    image: funcat/realtime:2.0.0
+    container_name: funcat-realtime
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      # 数据库连接
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: funcat
+      DB_USER: funcat_user
+      DB_PASSWORD: ${POSTGRES_PASSWORD:-funcat_password_change_me}
+
+      # 数据源配置
+      REALTIME_DATA_SOURCE: ${REALTIME_DATA_SOURCE:-akshare}
+      REALTIME_REFRESH_INTERVAL: ${REALTIME_REFRESH_INTERVAL:-2}
+
+      # 时区
+      TZ: Asia/Shanghai
+
+    volumes:
+      # 日志目录
+      - realtime_logs:/app/logs
+      # 配置文件（可选覆盖）
+      - ./config/realtime.yaml:/app/config/realtime.yaml:ro
+
+    networks:
+      - funcat-network
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 512M
+        reservations:
+          cpus: '0.25'
+          memory: 128M
 
   # ==========================================
   # Nginx 反向代理 (可选)
@@ -389,7 +437,7 @@ volumes:
   influxdb_data:
     driver: local
 
-  influxdb_config:
+  influxdb_home:
     driver: local
 
   # 选股服务
@@ -399,8 +447,12 @@ volumes:
   selector_data:
     driver: local
 
-  # API服务
-  api_logs:
+  # Web UI服务
+  webui_logs:
+    driver: local
+
+  # Real-time服务
+  realtime_logs:
     driver: local
 
   # Nginx
