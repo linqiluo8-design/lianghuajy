@@ -91,13 +91,21 @@ class AkShareSource(DataSourceBase):
                 return pd.DataFrame()
 
             # 4. 字段映射和标准化
+            # 辅助函数：安全获取列数据
+            def safe_get_column(df, col_name, default_value=''):
+                """安全获取DataFrame列，如果不存在返回默认值的Series"""
+                if col_name in df.columns:
+                    return df[col_name].fillna(default_value)
+                else:
+                    return pd.Series([default_value] * len(df))
+
             df = pd.DataFrame({
                 'stock_code': df_raw['代码'].apply(self._normalize_stock_code),
                 'stock_name': df_raw['名称'].fillna(''),
                 'price': pd.to_numeric(df_raw['最新价'], errors='coerce').fillna(0.0),
-                'open_price': pd.to_numeric(df_raw['开盘价'], errors='coerce').fillna(0.0) if '开盘价' in df_raw.columns else pd.to_numeric(df_raw.get('今开', 0), errors='coerce').fillna(0.0),
-                'high_price': pd.to_numeric(df_raw['最高价'], errors='coerce').fillna(0.0) if '最高价' in df_raw.columns else pd.to_numeric(df_raw.get('最高', 0), errors='coerce').fillna(0.0),
-                'low_price': pd.to_numeric(df_raw['最低价'], errors='coerce').fillna(0.0) if '最低价' in df_raw.columns else pd.to_numeric(df_raw.get('最低', 0), errors='coerce').fillna(0.0),
+                'open_price': pd.to_numeric(safe_get_column(df_raw, '开盘价', '0'), errors='coerce').fillna(0.0),
+                'high_price': pd.to_numeric(safe_get_column(df_raw, '最高价', '0'), errors='coerce').fillna(0.0),
+                'low_price': pd.to_numeric(safe_get_column(df_raw, '最低价', '0'), errors='coerce').fillna(0.0),
                 'pre_close': pd.to_numeric(df_raw['昨收'], errors='coerce').fillna(0.0),
                 'change_pct': pd.to_numeric(df_raw['涨跌幅'], errors='coerce').fillna(0.0),
                 'volume': pd.to_numeric(df_raw['成交量'], errors='coerce').fillna(0).astype(int),
@@ -105,15 +113,15 @@ class AkShareSource(DataSourceBase):
                 'turnover_rate': pd.to_numeric(df_raw['换手率'], errors='coerce').fillna(0.0),
                 'limit_type': df_raw['limit_type'],
 
-                # 新增：涨跌停详细信息
-                'limit_reason': df_raw['涨停原因分类'].fillna('') if '涨停原因分类' in df_raw.columns else df_raw.get('跌停原因分类', '').fillna(''),
-                'concept_tags': df_raw['所属概念'].fillna('') if '所属概念' in df_raw.columns else '',
-                'industry': df_raw['所属行业'].fillna('') if '所属行业' in df_raw.columns else '',
-                'consecutive_limit_days': pd.to_numeric(df_raw.get('连板数', 1), errors='coerce').fillna(1).astype(int),
-                'first_limit_time': df_raw.get('首次涨停时间', '') if '首次涨停时间' in df_raw.columns else df_raw.get('首次跌停时间', ''),
+                # 新增：涨跌停详细信息（使用安全获取函数）
+                'limit_reason': safe_get_column(df_raw, '涨停原因分类', safe_get_column(df_raw, '跌停原因分类', '')),
+                'concept_tags': safe_get_column(df_raw, '所属概念', ''),
+                'industry': safe_get_column(df_raw, '所属行业', ''),
+                'consecutive_limit_days': pd.to_numeric(safe_get_column(df_raw, '连板数', '1'), errors='coerce').fillna(1).astype(int),
+                'first_limit_time': safe_get_column(df_raw, '首次涨停时间', safe_get_column(df_raw, '首次跌停时间', '')),
 
                 # 封单信息
-                'today_auction_unmatched': pd.to_numeric(df_raw.get('封单金额', 0), errors='coerce').fillna(0).astype(int),
+                'today_auction_unmatched': pd.to_numeric(safe_get_column(df_raw, '封单金额', '0'), errors='coerce').fillna(0).astype(int),
             })
 
             # 统计各市场分布
