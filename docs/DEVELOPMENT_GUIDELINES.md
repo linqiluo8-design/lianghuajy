@@ -253,6 +253,57 @@ def _aggregate_by_realtime_sectors(self, trade_date: str) -> int:
 
 ---
 
+### 问题 5: 部署脚本方法调用参数错误
+
+**时间**: 2026-01-04
+**影响**: 部署脚本执行失败
+**错误信息**:
+```
+TypeError: RealtimeFetcher.fetch_and_save() takes 1 positional argument but 2 were given
+```
+
+**根本原因**:
+- `fetch_and_save()` 方法不接受 `trade_date` 参数
+- 部署脚本错误调用：`fetcher.fetch_and_save(trade_date)`
+
+**正确的方法签名**:
+```python
+# services/realtime_fetcher.py:151
+def fetch_and_save(self):
+    """获取并保存实时行情（不接受参数，内部使用当前日期）"""
+    # ...
+
+# services/sector_aggregator.py:54
+def aggregate(self, trade_date: Optional[str] = None) -> int:
+    """聚合指定日期的板块统计（trade_date 可选，默认今天）"""
+    # ...
+```
+
+**修复方案**:
+```python
+# ❌ 错误调用
+fetcher = RealtimeFetcher()
+fetcher.fetch_and_save(trade_date)  # TypeError!
+
+# ✅ 正确调用
+fetcher = RealtimeFetcher()
+fetcher.fetch_and_save()  # 不传参数
+
+# 聚合时可选传入日期
+aggregator = SectorAggregator()
+aggregator.aggregate(trade_date)  # 或 aggregate() 使用默认日期
+```
+
+**文件**: `scripts/quick-deploy.sh:37`
+**提交**: `0272440`
+
+**关键要点**:
+- ✅ 检查方法签名，确认参数个数和类型
+- ✅ `fetch_and_save()` 是无参方法，内部自动获取当前时间
+- ✅ `aggregate(trade_date)` 的 `trade_date` 是可选参数
+
+---
+
 ### 问题 3: 数据日期显示错误
 
 **时间**: 2025-12-31
