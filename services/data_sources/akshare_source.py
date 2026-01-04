@@ -116,7 +116,15 @@ class AkShareSource(DataSourceBase):
                 'today_auction_unmatched': pd.to_numeric(df_raw.get('封单金额', 0), errors='coerce').fillna(0).astype(int),
             })
 
+            # 统计各市场分布
+            market_stats = df.groupby(df['stock_code'].str[-2:]).size().to_dict()
+            sh_count = market_stats.get('SH', 0)  # 上海（主板+科创板）
+            sz_count = market_stats.get('SZ', 0)  # 深圳（主板+创业板）
+            bj_count = market_stats.get('BJ', 0)  # 北交所
+
             logger.info(f"✅ AkShare: 获取了 {len(df)} 只涨跌停股票（涨停={len(df_zt)}, 跌停={len(df_dt)}）")
+            logger.info(f"📊 市场分布: 上海{sh_count}只, 深圳{sz_count}只, 北交所{bj_count}只")
+
             return df
 
         except Exception as e:
