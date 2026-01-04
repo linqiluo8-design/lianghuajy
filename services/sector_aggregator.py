@@ -92,13 +92,78 @@ class SectorAggregator:
             if deleted_count > 0:
                 logger.info(f"🗑️  删除旧数据: {deleted_count} 条")
 
-            # 4. 聚合数据到默认板块"全市场"
-            cursor.execute("""
-                SELECT id FROM sectors WHERE sector_code = 'ALL_MARKET'
-            """)
+            # 4. 检查是否有股票-板块映射数据
+            cursor.execute("SELECT COUNT(*) FROM stock_sector_mapping")
+            mapping_count = cursor.fetchone()[0]
+
+            if mapping_count == 0:
+                # 没有映射，只聚合到"全市场"
+                logger.info("ℹ️  没有板块映射数据，聚合到'全市场'板块")
+                return self._aggregate_to_all_market(trade_date)
+            else:
+                # 有映射，按板块聚合
+                logger.info(f"📊 检测到 {mapping_count} 条板块映射，按细分板块聚合")
+                return self._aggregate_by_sectors(trade_date)
+
+        except Exception as e:
+            self.db_conn.rollback()
+            logger.error(f"❌ 聚合失败: {e}")
+            import traceback
+            traceback.print_exc()
+            return 0
+        finally:
+            cursor.close()
+
+    def _aggregate_to_all_market(self, trade_date: str) -> int:
+        """聚合到全市场板块（当没有细分板块时）"""
+        cursor = self.db_conn.cursor()
+
+        try:
+            cursor.execute("SELECT id FROM sectors WHERE sector_code = 'ALL_MARKET'")
             default_sector_id = cursor.fetchone()[0]
 
-            # 5. 聚合插入新数据
+            cursor.execute("""
+                INSERT INTO sector_daily_stats (
+                    trade_date, sector_id, sector_name,
+                    limit_up_count, limit_down_count,
+                    one_word_count, one_word_limit_down_count,
+                    broken_count, broken_resealed_count, broken_not_resealed_count,
+                    consecutive_2_count, consecutive_3_count,
+                    consecutive_4_count, consecutive_5_plus_count,
+                    total_stocks, avg_change_pct, total_turnover,
+                    created_at
+                )
+                SELECT
+                    %s, %s, '全市场',
+                    SUM(CASE WHEN limit_type = 'limit_up' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN limit_type = 'limit_down' THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN limit_type = 'limit_up' AND is_one_word = TRUE THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN limit_type = 'limit_down' AND is_one_word = TRUE THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN is_broken = TRUE THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN is_broken = TRUE AND is_resealed = TRUE THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN is_broken = TRUE AND is_resealed = FALSE THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN consecutive_limit_days = 2 THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN consecutive_limit_days = 3 THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN consecutive_limit_days = 4 THEN 1 ELSE 0 END),
+                    SUM(CASE WHEN consecutive_limit_days >= 5 THEN 1 ELSE 0 END),
+                    COUNT(*), AVG(change_pct), SUM(turnover), NOW()
+                FROM daily_limit_stats
+                WHERE trade_date = %s
+            """, (trade_date, default_sector_id, trade_date))
+
+            self.db_conn.commit()
+            logger.info("✅ 聚合到'全市场'完成")
+            return 1
+
+        finally:
+            cursor.close()
+
+    def _aggregate_by_sectors(self, trade_date: str) -> int:
+        """按细分板块聚合"""
+        cursor = self.db_conn.cursor()
+
+        try:
+            # 按板块聚合涨跌停数据
             cursor.execute("""
                 INSERT INTO sector_daily_stats (
                     trade_date, sector_id, sector_name,
@@ -112,72 +177,51 @@ class SectorAggregator:
                 )
                 SELECT
                     %s AS trade_date,
-                    %s AS sector_id,
-                    '全市场' AS sector_name,
-
-                    -- 涨停家数
-                    SUM(CASE WHEN limit_type = 'limit_up' THEN 1 ELSE 0 END) AS limit_up_count,
-
-                    -- 跌停家数
-                    SUM(CASE WHEN limit_type = 'limit_down' THEN 1 ELSE 0 END) AS limit_down_count,
-
-                    -- 一字涨停
-                    SUM(CASE WHEN limit_type = 'limit_up' AND is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_count,
-
-                    -- 一字跌停
-                    SUM(CASE WHEN limit_type = 'limit_down' AND is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_limit_down_count,
-
-                    -- 炸板总数
-                    SUM(CASE WHEN is_broken = TRUE THEN 1 ELSE 0 END) AS broken_count,
-
-                    -- 炸板回封
-                    SUM(CASE WHEN is_broken = TRUE AND is_resealed = TRUE THEN 1 ELSE 0 END) AS broken_resealed_count,
-
-                    -- 炸板未封
-                    SUM(CASE WHEN is_broken = TRUE AND is_resealed = FALSE THEN 1 ELSE 0 END) AS broken_not_resealed_count,
-
-                    -- 连板梯队
-                    SUM(CASE WHEN consecutive_limit_days = 2 THEN 1 ELSE 0 END) AS consecutive_2_count,
-                    SUM(CASE WHEN consecutive_limit_days = 3 THEN 1 ELSE 0 END) AS consecutive_3_count,
-                    SUM(CASE WHEN consecutive_limit_days = 4 THEN 1 ELSE 0 END) AS consecutive_4_count,
-                    SUM(CASE WHEN consecutive_limit_days >= 5 THEN 1 ELSE 0 END) AS consecutive_5_plus_count,
-
-                    -- 统计
+                    ssm.sector_id,
+                    s.sector_name,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' THEN 1 ELSE 0 END) AS limit_up_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' THEN 1 ELSE 0 END) AS limit_down_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_limit_down_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE THEN 1 ELSE 0 END) AS broken_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = TRUE THEN 1 ELSE 0 END) AS broken_resealed_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = FALSE THEN 1 ELSE 0 END) AS broken_not_resealed_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 2 THEN 1 ELSE 0 END) AS consecutive_2_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 3 THEN 1 ELSE 0 END) AS consecutive_3_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 4 THEN 1 ELSE 0 END) AS consecutive_4_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days >= 5 THEN 1 ELSE 0 END) AS consecutive_5_plus_count,
                     COUNT(*) AS total_stocks,
-                    AVG(change_pct) AS avg_change_pct,
-                    SUM(turnover) AS total_turnover,
-
+                    AVG(dls.change_pct) AS avg_change_pct,
+                    SUM(dls.turnover) AS total_turnover,
                     NOW() AS created_at
+                FROM daily_limit_stats dls
+                JOIN stock_sector_mapping ssm ON dls.stock_code = ssm.stock_code
+                JOIN sectors s ON ssm.sector_id = s.id
+                WHERE dls.trade_date = %s
+                GROUP BY ssm.sector_id, s.sector_name
+                HAVING COUNT(*) > 0
+            """, (trade_date, trade_date))
 
-                FROM daily_limit_stats
-                WHERE trade_date = %s
-            """, (trade_date, default_sector_id, trade_date))
-
+            rows_inserted = cursor.rowcount
             self.db_conn.commit()
 
-            # 6. 查询聚合结果以便输出日志
+            logger.info(f"✅ 聚合完成！插入 {rows_inserted} 个板块统计")
+
+            # 显示前5个板块的统计
             cursor.execute("""
-                SELECT limit_up_count, limit_down_count, one_word_count, one_word_limit_down_count
+                SELECT sector_name, limit_up_count, limit_down_count
                 FROM sector_daily_stats
-                WHERE trade_date = %s AND sector_id = %s
-            """, (trade_date, default_sector_id))
+                WHERE trade_date = %s
+                ORDER BY limit_up_count DESC
+                LIMIT 5
+            """, (trade_date,))
 
-            result = cursor.fetchone()
-            if result:
-                limit_up, limit_down, one_word, one_word_down = result
-                logger.info(f"✅ 聚合完成！涨停={limit_up}, 跌停={limit_down}, "
-                           f"一字涨停={one_word}, 一字跌停={one_word_down}")
-            else:
-                logger.info("✅ 聚合完成！")
+            logger.info("📊 涨停板块Top5:")
+            for row in cursor.fetchall():
+                logger.info(f"  {row[0]}: 涨停{row[1]}, 跌停{row[2]}")
 
-            return 1
+            return rows_inserted
 
-        except Exception as e:
-            self.db_conn.rollback()
-            logger.error(f"❌ 聚合失败: {e}")
-            import traceback
-            traceback.print_exc()
-            return 0
         finally:
             cursor.close()
 
