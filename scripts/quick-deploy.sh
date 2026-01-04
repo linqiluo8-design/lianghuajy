@@ -22,7 +22,7 @@ sleep 5
 
 # 3. 手动触发数据采集和聚合
 echo ""
-echo "📊 步骤 3/4: 立即采集和聚合数据"
+echo "⚡ 步骤 3/4: 立即采集和聚合数据（正常每2秒自动更新）"
 docker compose exec -T realtime python3 << 'PYTHON_SCRIPT'
 from services.realtime_fetcher import RealtimeFetcher
 from services.sector_aggregator import SectorAggregator
