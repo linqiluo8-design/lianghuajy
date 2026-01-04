@@ -99,18 +99,18 @@ class SectorAggregator:
             if deleted_count > 0:
                 logger.info(f"🗑️  删除旧数据: {deleted_count} 条")
 
-            # 4. 检查实时数据是否包含板块信息（优先使用）
+            # 4. 检查实时数据是否包含概念板块信息（优先使用）
             cursor.execute("""
                 SELECT COUNT(*) FROM daily_limit_stats
                 WHERE trade_date = %s
-                AND (limit_reason IS NOT NULL AND limit_reason != '')
+                AND (concept_tags IS NOT NULL AND concept_tags != '' AND concept_tags != '-')
             """, (trade_date,))
 
             realtime_sector_count = cursor.fetchone()[0]
 
             if realtime_sector_count > 0:
-                # 实时数据包含板块信息，使用动态聚合
-                logger.info(f"🔥 检测到 {realtime_sector_count} 条实时板块数据，使用动态聚合")
+                # 实时数据包含概念板块，使用动态聚合
+                logger.info(f"🔥 检测到 {realtime_sector_count} 条概念板块数据，使用动态聚合")
                 return self._aggregate_by_realtime_sectors(trade_date)
 
             # 5. 检查是否有股票-板块映射数据（兜底方案）
@@ -180,24 +180,31 @@ class SectorAggregator:
             cursor.close()
 
     def _aggregate_by_realtime_sectors(self, trade_date: str) -> int:
-        """从实时数据动态聚合板块（基于涨停原因）"""
+        """从实时数据动态聚合板块（基于所属概念）"""
         cursor = self.db_conn.cursor()
 
         try:
-            # 1. 获取所有涨跌停原因（作为板块名称）
+            # 1. 获取所有概念板块（从 concept_tags 字段提取）
             cursor.execute("""
                 SELECT DISTINCT
-                    TRIM(limit_reason) AS sector_name
+                    UNNEST(STRING_TO_ARRAY(concept_tags, ';')) AS sector_name
                 FROM daily_limit_stats
                 WHERE trade_date = %s
-                AND limit_reason IS NOT NULL
-                AND limit_reason != ''
-                AND limit_reason != '-'
-                ORDER BY sector_name
+                AND concept_tags IS NOT NULL
+                AND concept_tags != ''
+                AND concept_tags != '-'
             """, (trade_date,))
 
-            sectors = [row[0] for row in cursor.fetchall()]
-            logger.info(f"📊 发现 {len(sectors)} 个实时板块: {', '.join(sectors[:5])}...")
+            # 清理板块名称（去除空格、过滤无效值）
+            sectors = []
+            for row in cursor.fetchall():
+                sector_name = row[0].strip()
+                if sector_name and sector_name != '-':
+                    sectors.append(sector_name)
+
+            # 去重并排序
+            sectors = sorted(set(sectors))
+            logger.info(f"📊 发现 {len(sectors)} 个概念板块: {', '.join(sectors[:10])}...")
 
             # 2. 确保所有板块在 sectors 表中存在
             for sector_name in sectors:
@@ -209,7 +216,7 @@ class SectorAggregator:
 
             self.db_conn.commit()
 
-            # 3. 按板块聚合涨跌停数据
+            # 3. 按概念板块聚合涨跌停数据（一只股票可属于多个概念）
             cursor.execute("""
                 INSERT INTO sector_daily_stats (
                     trade_date, sector_id, sector_name,
@@ -236,18 +243,19 @@ class SectorAggregator:
                     SUM(CASE WHEN dls.consecutive_limit_days = 3 THEN 1 ELSE 0 END) AS consecutive_3_count,
                     SUM(CASE WHEN dls.consecutive_limit_days = 4 THEN 1 ELSE 0 END) AS consecutive_4_count,
                     SUM(CASE WHEN dls.consecutive_limit_days >= 5 THEN 1 ELSE 0 END) AS consecutive_5_plus_count,
-                    COUNT(*) AS total_stocks,
+                    COUNT(DISTINCT dls.stock_code) AS total_stocks,
                     AVG(dls.change_pct) AS avg_change_pct,
                     SUM(dls.turnover) AS total_turnover,
                     NOW() AS created_at
                 FROM daily_limit_stats dls
-                JOIN sectors s ON TRIM(dls.limit_reason) = s.sector_name AND s.sector_type = 'realtime'
+                CROSS JOIN LATERAL UNNEST(STRING_TO_ARRAY(dls.concept_tags, ';')) AS concept(name)
+                JOIN sectors s ON TRIM(concept.name) = s.sector_name AND s.sector_type = 'realtime'
                 WHERE dls.trade_date = %s
-                AND dls.limit_reason IS NOT NULL
-                AND dls.limit_reason != ''
-                AND dls.limit_reason != '-'
+                AND dls.concept_tags IS NOT NULL
+                AND dls.concept_tags != ''
+                AND dls.concept_tags != '-'
                 GROUP BY s.id, s.sector_name
-                HAVING COUNT(*) > 0
+                HAVING COUNT(DISTINCT dls.stock_code) > 0
                 ORDER BY limit_up_count DESC
             """, (trade_date, trade_date))
 
