@@ -304,6 +304,79 @@ aggregator.aggregate(trade_date)  # 或 aggregate() 使用默认日期
 
 ---
 
+### 问题 6: SectorAggregator 未连接数据库
+
+**时间**: 2026-01-04
+**影响**: 聚合功能崩溃
+**错误信息**:
+```
+AttributeError: 'NoneType' object has no attribute 'cursor'
+```
+
+**根本原因**:
+- `SectorAggregator` 初始化时 `self.db_conn = None`
+- 直接调用 `aggregate()` 而未先调用 `connect()`
+- 在 `cursor = self.db_conn.cursor()` 时出错
+
+**修复方案（两阶段）**:
+
+**阶段 1: 脚本修复（立即解决）**
+```python
+# ❌ 错误调用
+aggregator = SectorAggregator()
+aggregator.aggregate()  # db_conn 为 None，崩溃！
+
+# ✅ 正确调用
+aggregator = SectorAggregator()
+aggregator.connect()  # 先连接数据库
+aggregator.aggregate()
+```
+
+**阶段 2: 代码优化（防止复发）**
+```python
+# services/sector_aggregator.py:64-69
+def aggregate(self, trade_date: Optional[str] = None) -> int:
+    # 自动连接数据库（如果未连接）
+    if self.db_conn is None:
+        logger.info("📡 自动连接数据库...")
+        if not self.connect():
+            logger.error("❌ 数据库连接失败，无法聚合")
+            return 0
+    # ... 继续聚合逻辑
+```
+
+**优化后的三种使用方式**:
+```python
+# 方式1: 自动连接（推荐，最简单）
+aggregator = SectorAggregator()
+aggregator.aggregate()  # 内部自动 connect()
+
+# 方式2: 手动连接（显式控制）
+aggregator = SectorAggregator()
+if aggregator.connect():
+    aggregator.aggregate()
+
+# 方式3: 复用连接（realtime_fetcher 模式）
+aggregator = SectorAggregator()
+aggregator.db_conn = existing_connection
+aggregator.aggregate()
+```
+
+**文件**:
+- `scripts/quick-deploy.sh:46-47` (脚本修复)
+- `services/sector_aggregator.py:64-69` (代码优化)
+
+**提交**:
+- `8f3ad99` (脚本修复)
+- `fbfe9d9` (代码优化)
+
+**关键要点**:
+- ✅ 资源类（需要连接）应提供自动连接功能
+- ✅ 优先容错处理而非崩溃（返回 0 而非抛异常）
+- ✅ 支持多种使用模式（自动/手动/复用）
+
+---
+
 ### 问题 3: 数据日期显示错误
 
 **时间**: 2025-12-31
