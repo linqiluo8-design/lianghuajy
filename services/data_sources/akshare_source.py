@@ -50,35 +50,73 @@ class AkShareSource(DataSourceBase):
 
     def get_realtime_quotes(self) -> pd.DataFrame:
         """
-        获取所有A股实时行情
+        获取所有A股实时行情（涨跌停 + 详细信息）
 
         Returns:
-            pd.DataFrame: 标准化的行情数据
+            pd.DataFrame: 标准化的行情数据，包含板块、涨停原因等信息
         """
-        try:
-            # 从东方财富获取实时行情
-            df_raw = ak.stock_zh_a_spot_em()
+        from datetime import datetime
 
-            # 字段映射和标准化（先处理 NA/inf 值，再转换类型）
+        try:
+            # 获取今日日期
+            today = datetime.now().strftime("%Y%m%d")
+
+            # 1. 获取涨停池数据（包含涨停原因、板块等）
+            try:
+                df_zt = ak.stock_zt_pool_em(date=today)
+                df_zt['limit_type'] = 'limit_up'
+                logger.info(f"✅ AkShare: 获取涨停池 {len(df_zt)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取涨停池失败: {e}")
+                df_zt = pd.DataFrame()
+
+            # 2. 获取跌停池数据
+            try:
+                df_dt = ak.stock_dt_pool_em(date=today)
+                df_dt['limit_type'] = 'limit_down'
+                logger.info(f"✅ AkShare: 获取跌停池 {len(df_dt)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取跌停池失败: {e}")
+                df_dt = pd.DataFrame()
+
+            # 3. 合并涨停和跌停数据
+            if not df_zt.empty and not df_dt.empty:
+                df_raw = pd.concat([df_zt, df_dt], ignore_index=True)
+            elif not df_zt.empty:
+                df_raw = df_zt
+            elif not df_dt.empty:
+                df_raw = df_dt
+            else:
+                logger.warning("⚠️ 涨停池和跌停池均为空")
+                return pd.DataFrame()
+
+            # 4. 字段映射和标准化
             df = pd.DataFrame({
                 'stock_code': df_raw['代码'].apply(self._normalize_stock_code),
                 'stock_name': df_raw['名称'].fillna(''),
                 'price': pd.to_numeric(df_raw['最新价'], errors='coerce').fillna(0.0),
-                'open_price': pd.to_numeric(df_raw['今开'], errors='coerce').fillna(0.0),
-                'high_price': pd.to_numeric(df_raw['最高'], errors='coerce').fillna(0.0),
-                'low_price': pd.to_numeric(df_raw['最低'], errors='coerce').fillna(0.0),
+                'open_price': pd.to_numeric(df_raw['开盘价'], errors='coerce').fillna(0.0) if '开盘价' in df_raw.columns else pd.to_numeric(df_raw.get('今开', 0), errors='coerce').fillna(0.0),
+                'high_price': pd.to_numeric(df_raw['最高价'], errors='coerce').fillna(0.0) if '最高价' in df_raw.columns else pd.to_numeric(df_raw.get('最高', 0), errors='coerce').fillna(0.0),
+                'low_price': pd.to_numeric(df_raw['最低价'], errors='coerce').fillna(0.0) if '最低价' in df_raw.columns else pd.to_numeric(df_raw.get('最低', 0), errors='coerce').fillna(0.0),
                 'pre_close': pd.to_numeric(df_raw['昨收'], errors='coerce').fillna(0.0),
                 'change_pct': pd.to_numeric(df_raw['涨跌幅'], errors='coerce').fillna(0.0),
                 'volume': pd.to_numeric(df_raw['成交量'], errors='coerce').fillna(0).astype(int),
                 'turnover': pd.to_numeric(df_raw['成交额'], errors='coerce').fillna(0.0),
                 'turnover_rate': pd.to_numeric(df_raw['换手率'], errors='coerce').fillna(0.0),
-                'bid1': pd.to_numeric(df_raw.get('买一', 0), errors='coerce').fillna(0.0) if '买一' in df_raw.columns else 0.0,
-                'bid1_volume': pd.to_numeric(df_raw.get('买一量', 0), errors='coerce').fillna(0).astype(int) if '买一量' in df_raw.columns else 0,
-                'ask1': pd.to_numeric(df_raw.get('卖一', 0), errors='coerce').fillna(0.0) if '卖一' in df_raw.columns else 0.0,
-                'ask1_volume': pd.to_numeric(df_raw.get('卖一量', 0), errors='coerce').fillna(0).astype(int) if '卖一量' in df_raw.columns else 0,
+                'limit_type': df_raw['limit_type'],
+
+                # 新增：涨跌停详细信息
+                'limit_reason': df_raw['涨停原因分类'].fillna('') if '涨停原因分类' in df_raw.columns else df_raw.get('跌停原因分类', '').fillna(''),
+                'concept_tags': df_raw['所属概念'].fillna('') if '所属概念' in df_raw.columns else '',
+                'industry': df_raw['所属行业'].fillna('') if '所属行业' in df_raw.columns else '',
+                'consecutive_limit_days': pd.to_numeric(df_raw.get('连板数', 1), errors='coerce').fillna(1).astype(int),
+                'first_limit_time': df_raw.get('首次涨停时间', '') if '首次涨停时间' in df_raw.columns else df_raw.get('首次跌停时间', ''),
+
+                # 封单信息
+                'today_auction_unmatched': pd.to_numeric(df_raw.get('封单金额', 0), errors='coerce').fillna(0).astype(int),
             })
 
-            logger.info(f"✅ AkShare: 获取了 {len(df)} 只股票行情")
+            logger.info(f"✅ AkShare: 获取了 {len(df)} 只涨跌停股票（涨停={len(df_zt)}, 跌停={len(df_dt)}）")
             return df
 
         except Exception as e:

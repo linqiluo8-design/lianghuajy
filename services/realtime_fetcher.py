@@ -230,6 +230,14 @@ class RealtimeFetcher:
                     row['pre_close']
                 )
 
+                # 获取额外字段（板块、涨停原因等）
+                limit_reason = row.get('limit_reason', '')
+                industry = row.get('industry', '')
+                concept_tags = row.get('concept_tags', '')
+                consecutive_limit_days = row.get('consecutive_limit_days', 1)
+                first_limit_time = row.get('first_limit_time', None)
+                today_auction_unmatched = row.get('today_auction_unmatched', 0)
+
                 # 插入或更新数据
                 cursor.execute("""
                     INSERT INTO daily_limit_stats (
@@ -237,12 +245,18 @@ class RealtimeFetcher:
                         open_price, close_price, high_price, low_price, pre_close,
                         change_pct, limit_type, is_one_word,
                         volume, turnover, turnover_rate,
+                        limit_reason, industry, concept_tags,
+                        consecutive_limit_days, first_limit_time,
+                        today_auction_unmatched,
                         created_at, updated_at
                     ) VALUES (
                         %s, %s, %s,
                         %s, %s, %s, %s, %s,
                         %s, %s, %s,
                         %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s,
+                        %s,
                         NOW(), NOW()
                     )
                     ON CONFLICT (trade_date, stock_code)
@@ -256,12 +270,21 @@ class RealtimeFetcher:
                         volume = EXCLUDED.volume,
                         turnover = EXCLUDED.turnover,
                         turnover_rate = EXCLUDED.turnover_rate,
+                        limit_reason = EXCLUDED.limit_reason,
+                        industry = EXCLUDED.industry,
+                        concept_tags = EXCLUDED.concept_tags,
+                        consecutive_limit_days = EXCLUDED.consecutive_limit_days,
+                        first_limit_time = EXCLUDED.first_limit_time,
+                        today_auction_unmatched = EXCLUDED.today_auction_unmatched,
                         updated_at = NOW()
                 """, (
                     trade_date, row['stock_code'], row['stock_name'],
                     row['open_price'], row['price'], row['high_price'], row['low_price'], row['pre_close'],
                     row['change_pct'], limit_type, is_one_word,
-                    row['volume'], row['turnover'], row['turnover_rate']
+                    row['volume'], row['turnover'], row['turnover_rate'],
+                    limit_reason, industry, concept_tags,
+                    consecutive_limit_days, first_limit_time,
+                    today_auction_unmatched
                 ))
 
                 saved_count += 1

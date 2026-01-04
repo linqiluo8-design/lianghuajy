@@ -92,13 +92,27 @@ class SectorAggregator:
             if deleted_count > 0:
                 logger.info(f"🗑️  删除旧数据: {deleted_count} 条")
 
-            # 4. 检查是否有股票-板块映射数据
+            # 4. 检查实时数据是否包含板块信息（优先使用）
+            cursor.execute("""
+                SELECT COUNT(*) FROM daily_limit_stats
+                WHERE trade_date = %s
+                AND (limit_reason IS NOT NULL AND limit_reason != '')
+            """, (trade_date,))
+
+            realtime_sector_count = cursor.fetchone()[0]
+
+            if realtime_sector_count > 0:
+                # 实时数据包含板块信息，使用动态聚合
+                logger.info(f"🔥 检测到 {realtime_sector_count} 条实时板块数据，使用动态聚合")
+                return self._aggregate_by_realtime_sectors(trade_date)
+
+            # 5. 检查是否有股票-板块映射数据（兜底方案）
             cursor.execute("SELECT COUNT(*) FROM stock_sector_mapping")
             mapping_count = cursor.fetchone()[0]
 
             if mapping_count == 0:
                 # 没有映射，只聚合到"全市场"
-                logger.info("ℹ️  没有板块映射数据，聚合到'全市场'板块")
+                logger.info("ℹ️  没有板块数据，聚合到'全市场'板块")
                 return self._aggregate_to_all_market(trade_date)
             else:
                 # 有映射，按板块聚合
@@ -154,6 +168,101 @@ class SectorAggregator:
             self.db_conn.commit()
             logger.info("✅ 聚合到'全市场'完成")
             return 1
+
+        finally:
+            cursor.close()
+
+    def _aggregate_by_realtime_sectors(self, trade_date: str) -> int:
+        """从实时数据动态聚合板块（基于涨停原因）"""
+        cursor = self.db_conn.cursor()
+
+        try:
+            # 1. 获取所有涨跌停原因（作为板块名称）
+            cursor.execute("""
+                SELECT DISTINCT
+                    TRIM(limit_reason) AS sector_name
+                FROM daily_limit_stats
+                WHERE trade_date = %s
+                AND limit_reason IS NOT NULL
+                AND limit_reason != ''
+                AND limit_reason != '-'
+                ORDER BY sector_name
+            """, (trade_date,))
+
+            sectors = [row[0] for row in cursor.fetchall()]
+            logger.info(f"📊 发现 {len(sectors)} 个实时板块: {', '.join(sectors[:5])}...")
+
+            # 2. 确保所有板块在 sectors 表中存在
+            for sector_name in sectors:
+                cursor.execute("""
+                    INSERT INTO sectors (sector_code, sector_name, sector_type, stock_count)
+                    VALUES (%s, %s, 'realtime', 0)
+                    ON CONFLICT (sector_code) DO NOTHING
+                """, (f"RT_{sector_name}", sector_name))
+
+            self.db_conn.commit()
+
+            # 3. 按板块聚合涨跌停数据
+            cursor.execute("""
+                INSERT INTO sector_daily_stats (
+                    trade_date, sector_id, sector_name,
+                    limit_up_count, limit_down_count,
+                    one_word_count, one_word_limit_down_count,
+                    broken_count, broken_resealed_count, broken_not_resealed_count,
+                    consecutive_2_count, consecutive_3_count,
+                    consecutive_4_count, consecutive_5_plus_count,
+                    total_stocks, avg_change_pct, total_turnover,
+                    created_at
+                )
+                SELECT
+                    %s AS trade_date,
+                    s.id AS sector_id,
+                    s.sector_name,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' THEN 1 ELSE 0 END) AS limit_up_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' THEN 1 ELSE 0 END) AS limit_down_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_limit_down_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE THEN 1 ELSE 0 END) AS broken_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = TRUE THEN 1 ELSE 0 END) AS broken_resealed_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = FALSE THEN 1 ELSE 0 END) AS broken_not_resealed_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 2 THEN 1 ELSE 0 END) AS consecutive_2_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 3 THEN 1 ELSE 0 END) AS consecutive_3_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 4 THEN 1 ELSE 0 END) AS consecutive_4_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days >= 5 THEN 1 ELSE 0 END) AS consecutive_5_plus_count,
+                    COUNT(*) AS total_stocks,
+                    AVG(dls.change_pct) AS avg_change_pct,
+                    SUM(dls.turnover) AS total_turnover,
+                    NOW() AS created_at
+                FROM daily_limit_stats dls
+                JOIN sectors s ON TRIM(dls.limit_reason) = s.sector_name AND s.sector_type = 'realtime'
+                WHERE dls.trade_date = %s
+                AND dls.limit_reason IS NOT NULL
+                AND dls.limit_reason != ''
+                AND dls.limit_reason != '-'
+                GROUP BY s.id, s.sector_name
+                HAVING COUNT(*) > 0
+                ORDER BY limit_up_count DESC
+            """, (trade_date, trade_date))
+
+            rows_inserted = cursor.rowcount
+            self.db_conn.commit()
+
+            logger.info(f"✅ 实时板块聚合完成！插入 {rows_inserted} 个板块统计")
+
+            # 显示前10个热门板块的统计
+            cursor.execute("""
+                SELECT sector_name, limit_up_count, limit_down_count, total_stocks
+                FROM sector_daily_stats
+                WHERE trade_date = %s
+                ORDER BY limit_up_count DESC
+                LIMIT 10
+            """, (trade_date,))
+
+            logger.info("🔥 热门涨停板块Top10:")
+            for row in cursor.fetchall():
+                logger.info(f"  {row[0]}: 涨停{row[1]}, 跌停{row[2]}, 总数{row[3]}")
+
+            return rows_inserted
 
         finally:
             cursor.close()
