@@ -41,6 +41,11 @@ try:
     print("\n📊 开始聚合板块数据...")
     trade_date = datetime.datetime.now().strftime('%Y-%m-%d')
     aggregator = SectorAggregator()
+
+    # 必须先连接数据库
+    if not aggregator.connect():
+        raise Exception("数据库连接失败")
+
     sectors_count = aggregator.aggregate(trade_date)
     print(f"✅ 聚合完成！共 {sectors_count} 个板块")
 
