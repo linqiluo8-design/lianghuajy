@@ -32,12 +32,14 @@ try:
     # 1. 采集今日数据
     print("🔍 开始采集实时数据...")
     fetcher = RealtimeFetcher()
-    trade_date = datetime.datetime.now().strftime('%Y-%m-%d')
-    stocks_count = fetcher.fetch_and_save(trade_date)
-    print(f"✅ 采集完成！共 {stocks_count} 只股票")
 
-    # 2. 重新聚合板块
+    # fetch_and_save() 不接受参数，内部自动使用当前日期
+    fetcher.fetch_and_save()
+    print("✅ 采集完成！")
+
+    # 2. 重新聚合板块（可选指定日期，默认今天）
     print("\n📊 开始聚合板块数据...")
+    trade_date = datetime.datetime.now().strftime('%Y-%m-%d')
     aggregator = SectorAggregator()
     sectors_count = aggregator.aggregate(trade_date)
     print(f"✅ 聚合完成！共 {sectors_count} 个板块")
