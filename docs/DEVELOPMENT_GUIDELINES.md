@@ -1,0 +1,669 @@
+# 开发准则与问题修复记录
+
+## 📋 目录
+- [核心设计原则](#核心设计原则)
+- [问题修复记录](#问题修复记录)
+- [技术架构决策](#技术架构决策)
+- [数据流程](#数据流程)
+- [部署流程](#部署流程)
+- [常见陷阱](#常见陷阱)
+
+---
+
+## 核心设计原则
+
+### 1. 实时动态原则 ⭐⭐⭐
+**所有数据都必须实时分析、动态分析**
+
+- ❌ **禁止**：手动导入板块列表、硬编码板块名称
+- ✅ **正确**：从 AkShare 实时数据中动态提取板块信息
+- ✅ **正确**：从 `limit_reason` 字段自动识别热门板块
+- ✅ **正确**：每次采集都重新分析板块分布
+
+**示例：**
+```python
+# ❌ 错误做法
+SECTORS = ['商业航天', '人形机器人', 'AI概念']  # 硬编码
+
+# ✅ 正确做法
+cursor.execute("""
+    SELECT DISTINCT TRIM(limit_reason) AS sector_name
+    FROM daily_limit_stats
+    WHERE trade_date = %s AND limit_reason IS NOT NULL
+""")
+sectors = [row[0] for row in cursor.fetchall()]  # 动态提取
+```
+
+### 2. 数据完整性原则
+**保留全部 A 股数据，不做筛选**
+
+- ✅ 包含：沪深北三大交易所（6/688/000/300/43/83 开头）
+- ✅ 包含：ST 股票、新股、所有市场板块
+- ❌ 排除：B 股、港股、美股
+
+### 3. 用户体验原则
+**展示实际数据，不展示系统信息**
+
+- ❌ 错误：显示系统日期（`datetime.now()`）
+- ✅ 正确：显示数据实际日期（`MAX(trade_date)`）
+- ❌ 错误：显示笼统的"全市场"
+- ✅ 正确：显示细分板块（商业航天、人形机器人等）
+
+---
+
+## 问题修复记录
+
+### 问题 1: DataFrame 列访问 TypeError
+
+**时间**: 2025-12-31
+**影响**: AkShare 数据采集失败
+**错误信息**:
+```
+'int' object has no attribute 'fillna'
+```
+
+**根本原因**:
+- 使用 `df.get(column_name, default)` 在列不存在时返回标量值
+- 对标量值调用 `.fillna()` 方法导致 TypeError
+- 涨停池和跌停池的列结构不一致
+
+**修复方案**:
+创建 `safe_get_column()` 辅助函数，确保始终返回 Series：
+
+```python
+def safe_get_column(df, col_name, default_value=''):
+    """安全获取 DataFrame 列，如果不存在返回默认值的 Series"""
+    if col_name in df.columns:
+        return df[col_name].fillna(default_value)
+    else:
+        return pd.Series([default_value] * len(df))
+
+# 使用示例
+df = pd.DataFrame({
+    'limit_reason': safe_get_column(
+        df_raw,
+        '涨停原因分类',
+        safe_get_column(df_raw, '跌停原因分类', '')
+    ),
+    'industry': safe_get_column(df_raw, '所属行业', ''),
+})
+```
+
+**文件**: `services/data_sources/akshare_source.py:95-125`
+**提交**: `e51889b`
+
+**关键要点**:
+- ✅ Pandas DataFrame 列访问必须保证类型安全
+- ✅ 不同 API 的返回列结构可能不一致，需要容错处理
+- ✅ 辅助函数可以提高代码可维护性
+
+---
+
+### 问题 2: 板块显示"全市场"而非细分板块
+
+**时间**: 2025-12-31
+**影响**: 用户看不到具体板块排名
+**现象**: 看板只显示"全市场"，没有"商业航天"、"人形机器人"等细分板块
+
+**根本原因**:
+1. 数据库缺少 `limit_reason` 等扩展字段
+2. `realtime_fetcher.py` 没有保存板块相关字段
+3. `sector_aggregator.py` 没有实现动态聚合逻辑
+
+**修复方案**:
+
+**步骤 1: 数据库迁移**
+```sql
+ALTER TABLE daily_limit_stats
+ADD COLUMN limit_reason VARCHAR(200),
+ADD COLUMN industry VARCHAR(200),
+ADD COLUMN concept_tags TEXT,
+ADD COLUMN consecutive_limit_days INTEGER DEFAULT 1,
+ADD COLUMN first_limit_time TIME,
+ADD COLUMN today_auction_unmatched BOOLEAN DEFAULT FALSE;
+```
+
+**步骤 2: 扩展数据采集**
+```python
+# realtime_fetcher.py
+cursor.execute("""
+    INSERT INTO daily_limit_stats (
+        ..., limit_reason, industry, concept_tags,
+        consecutive_limit_days, first_limit_time,
+        today_auction_unmatched
+    ) VALUES (%s, ..., %s, %s, %s, %s, %s, %s)
+""", (..., limit_reason, industry, concept_tags,
+     consecutive_limit_days, first_limit_time,
+     today_auction_unmatched))
+```
+
+**步骤 3: 实现动态聚合**
+```python
+# sector_aggregator.py
+def _aggregate_by_realtime_sectors(self, trade_date: str) -> int:
+    # 1. 从 limit_reason 提取板块
+    cursor.execute("""
+        SELECT DISTINCT TRIM(limit_reason) AS sector_name
+        FROM daily_limit_stats
+        WHERE trade_date = %s
+        AND limit_reason IS NOT NULL
+        AND limit_reason != ''
+    """, (trade_date,))
+
+    # 2. 动态创建板块
+    for sector_name in sectors:
+        cursor.execute("""
+            INSERT INTO sectors (sector_code, sector_name, sector_type)
+            VALUES (%s, %s, 'realtime')
+            ON CONFLICT DO NOTHING
+        """, (f"RT_{sector_name}", sector_name))
+
+    # 3. 按板块聚合
+    cursor.execute("""
+        INSERT INTO sector_daily_stats (...)
+        SELECT ...
+        FROM daily_limit_stats dls
+        JOIN sectors s ON TRIM(dls.limit_reason) = s.sector_name
+        GROUP BY s.id, s.sector_name
+    """)
+```
+
+**文件**:
+- `migrations/004_add_sector_fields.sql`
+- `services/realtime_fetcher.py:150-180`
+- `services/sector_aggregator.py:175-268`
+
+**关键要点**:
+- ✅ 数据采集时必须保存所有业务字段
+- ✅ 聚合逻辑要优先使用实时数据
+- ✅ 使用 `sector_type = 'realtime'` 区分动态板块
+
+---
+
+### 问题 3: 数据日期显示错误
+
+**时间**: 2025-12-31
+**影响**: 用户看到的日期与实际数据不符
+**现象**: 看板显示 2025-12-30，实际数据是 2025-12-31
+
+**根本原因**:
+- 后端使用系统日期（`time.Now()`）而非数据实际日期
+- 前端显示系统日期而非 API 返回日期
+
+**修复方案**:
+
+**后端修复**:
+```go
+// main.go
+func getSectorStats(c *gin.Context) {
+    date := c.Query("date")
+    if date == "" {
+        // ❌ 错误: date = time.Now().Format("2006-01-02")
+
+        // ✅ 正确: 查询数据库最新日期
+        var latestDate string
+        err := db.QueryRow("SELECT MAX(trade_date) FROM sector_daily_stats").Scan(&latestDate)
+        if err != nil || latestDate == "" {
+            date = time.Now().Format("2006-01-02")
+        } else {
+            date = latestDate
+        }
+        log.Printf("📅 使用最新数据日期: %s", date)
+    }
+    // ...
+}
+```
+
+**前端修复**:
+```javascript
+// index.html
+async function fetchData() {
+    const response = await fetch('/api/stats');
+    const data = await response.json();
+
+    // ❌ 错误: const date = new Date().toLocaleDateString('zh-CN');
+
+    // ✅ 正确: 使用 API 返回的日期
+    document.getElementById('currentDate').textContent = data.date;
+}
+```
+
+**文件**:
+- `web-ui/backend/main.go:45-60`
+- `web-ui/backend/static/index.html:320-330`
+
+**关键要点**:
+- ✅ 显示数据实际日期，不是系统日期
+- ✅ 使用 `MAX(trade_date)` 查询最新数据日期
+- ✅ 前端从 API 响应获取日期，不自行生成
+
+---
+
+### 问题 4: UI 展示不符合需求
+
+**时间**: 2025-12-31
+**影响**: 用户无法快速找到涨停数量最多的板块
+**现象**: 使用柱状图展示，信息密度低
+
+**需求**:
+- 表格形式展示板块排行
+- 支持升序/降序排序
+- 显示：排名、板块名称、涨停数量、一字板、跌停、炸板
+
+**修复方案**:
+
+```html
+<!-- 板块涨停排行（表格形式） -->
+<div class="card mb-4">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="card-title mb-0">🔥 板块涨停排行</h5>
+        <select id="sectorSortOrder" onchange="updateSectorSort()">
+            <option value="desc">涨停数量 ↓ 降序</option>
+            <option value="asc">涨停数量 ↑ 升序</option>
+        </select>
+    </div>
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>排名</th>
+                <th>板块名称</th>
+                <th>涨停数量</th>
+                <th>一字板</th>
+                <th>跌停数量</th>
+                <th>炸板数量</th>
+            </tr>
+        </thead>
+        <tbody id="sectorRankingTable"></tbody>
+    </table>
+</div>
+
+<script>
+function renderSectorRankingTable(data, sortOrder = 'desc') {
+    const sortedData = [...data].sort((a, b) => {
+        const countA = a.limit_up_count || 0;
+        const countB = b.limit_up_count || 0;
+        return sortOrder === 'desc' ? countB - countA : countA - countB;
+    });
+
+    const tbody = document.getElementById('sectorRankingTable');
+    tbody.innerHTML = sortedData.map((sector, index) => `
+        <tr>
+            <td><strong>#${index + 1}</strong></td>
+            <td><strong>${sector.sector_name}</strong></td>
+            <td><span class="badge bg-danger">${sector.limit_up_count || 0}</span></td>
+            <td><span class="badge bg-warning">${sector.one_word_count || 0}</span></td>
+            <td><span class="badge bg-success">${sector.limit_down_count || 0}</span></td>
+            <td><span class="badge bg-secondary">${sector.broken_count || 0}</span></td>
+        </tr>
+    `).join('');
+}
+</script>
+```
+
+**文件**: `web-ui/backend/static/index.html:150-250`
+
+**关键要点**:
+- ✅ 表格比图表更适合展示排行数据
+- ✅ 支持用户自定义排序提升体验
+- ✅ 使用 Bootstrap badges 突出关键指标
+
+---
+
+## 技术架构决策
+
+### AkShare API 选择
+
+**决策**: 使用涨停池/跌停池专用 API，而非通用行情 API
+
+**理由**:
+1. 涨停池 API (`stock_zt_pool_em`) 包含 `涨停原因分类` 字段
+2. 跌停池 API (`stock_zt_pool_dtgc_em`) 包含 `跌停原因分类` 字段
+3. 通用行情 API 不包含板块热点信息
+
+**对比**:
+| API | 优点 | 缺点 |
+|-----|------|------|
+| `stock_zh_a_spot_em()` | 数据全面 | 无板块热点信息 |
+| `stock_zt_pool_em()` | 包含涨停原因 | 仅涨停股 |
+| `stock_zt_pool_dtgc_em()` | 包含跌停原因 | 仅跌停股 |
+
+**实现**:
+```python
+def fetch_realtime_data(self, trade_date: str) -> List[Dict]:
+    # 1. 获取涨停池
+    df_limit_up = ak.stock_zt_pool_em(date=date_str)
+    df_limit_up['limit_type'] = 'limit_up'
+
+    # 2. 获取跌停池
+    df_limit_down = ak.stock_zt_pool_dtgc_em(date=date_str)
+    df_limit_down['limit_type'] = 'limit_down'
+
+    # 3. 合并
+    df_raw = pd.concat([df_limit_up, df_limit_down], ignore_index=True)
+```
+
+**参考资料**: https://zhuanlan.zhihu.com/p/504950906
+
+---
+
+### 双模式聚合策略
+
+**决策**: 实时板块优先，预配置板块兜底
+
+**聚合流程**:
+```mermaid
+graph TD
+    A[开始聚合] --> B{检查 limit_reason 数据}
+    B -->|有数据| C[动态聚合板块]
+    B -->|无数据| D{检查 stock_sector_mapping}
+    D -->|有映射| E[按预配置板块聚合]
+    D -->|无映射| F[聚合到全市场]
+    C --> G[完成]
+    E --> G
+    F --> G
+```
+
+**代码实现**:
+```python
+def aggregate(self, trade_date: str) -> int:
+    # 1. 检查实时板块数据
+    cursor.execute("""
+        SELECT COUNT(*) FROM daily_limit_stats
+        WHERE trade_date = %s
+        AND (limit_reason IS NOT NULL AND limit_reason != '')
+    """, (trade_date,))
+
+    if cursor.fetchone()[0] > 0:
+        # 优先使用实时板块
+        return self._aggregate_by_realtime_sectors(trade_date)
+
+    # 2. 检查预配置板块
+    cursor.execute("SELECT COUNT(*) FROM stock_sector_mapping")
+    if cursor.fetchone()[0] > 0:
+        # 使用预配置板块
+        return self._aggregate_by_sectors(trade_date)
+
+    # 3. 兜底：全市场
+    return self._aggregate_to_all_market(trade_date)
+```
+
+**关键要点**:
+- ✅ 优先级：实时 > 预配置 > 全市场
+- ✅ 确保在任何情况下都能展示数据
+- ✅ 通过日志清晰标识使用的模式
+
+---
+
+## 数据流程
+
+### 完整数据链路
+
+```
+AkShare API
+    ↓
+realtime_fetcher.py (采集)
+    ↓
+daily_limit_stats 表 (存储)
+    ↓
+sector_aggregator.py (聚合)
+    ↓
+sector_daily_stats 表 (板块统计)
+    ↓
+Golang API (查询)
+    ↓
+Web UI (展示)
+```
+
+### 关键字段映射
+
+| AkShare 字段 | 数据库字段 | 说明 |
+|-------------|-----------|------|
+| 涨停原因分类 | limit_reason | 板块热点（核心） |
+| 所属行业 | industry | 行业分类 |
+| 所属概念 | concept_tags | 概念标签 |
+| 连板数 | consecutive_limit_days | 连续涨停天数 |
+| 首次封板时间 | first_limit_time | 封板时间 |
+| 竞价-成交额 | today_auction_unmatched | 竞价未匹配额 |
+
+---
+
+## 部署流程
+
+### 标准部署步骤
+
+1. **拉取代码**
+   ```bash
+   git pull origin claude/debug-dashboard-akshare-9Igcv
+   ```
+
+2. **检查数据库字段**
+   ```bash
+   ./scripts/deploy-realtime-dynamic-sectors.sh
+   ```
+   自动检测并应用迁移
+
+3. **重启服务**
+   ```bash
+   docker compose restart realtime
+   ```
+
+4. **触发数据采集**
+   ```bash
+   docker compose exec realtime python -c "
+   from services.realtime_fetcher import RealtimeFetcher
+   from services.sector_aggregator import SectorAggregator
+   import datetime
+
+   trade_date = datetime.datetime.now().strftime('%Y-%m-%d')
+   RealtimeFetcher().fetch_and_save(trade_date)
+   SectorAggregator().aggregate(trade_date)
+   "
+   ```
+
+5. **验证数据**
+   ```bash
+   docker compose exec postgres psql -U funcat_user -d funcat \
+       -c "SELECT sector_name, limit_up_count FROM sector_daily_stats
+           WHERE trade_date = CURRENT_DATE
+           ORDER BY limit_up_count DESC LIMIT 10;"
+   ```
+
+### 快速部署（一键脚本）
+
+```bash
+./scripts/quick-deploy.sh
+```
+
+**脚本功能**:
+- ✅ 自动拉取代码
+- ✅ 自动重启服务
+- ✅ 自动采集数据
+- ✅ 自动聚合板块
+- ✅ 自动验证结果
+
+---
+
+## 常见陷阱
+
+### 1. Pandas DataFrame 列访问
+
+❌ **错误做法**:
+```python
+df['column'] = df_raw.get('source_column', '').fillna('')
+# 如果 source_column 不存在，get() 返回 ''（字符串）
+# 对字符串调用 .fillna() 报错：'str' object has no attribute 'fillna'
+```
+
+✅ **正确做法**:
+```python
+def safe_get_column(df, col_name, default_value=''):
+    if col_name in df.columns:
+        return df[col_name].fillna(default_value)
+    else:
+        return pd.Series([default_value] * len(df))
+
+df['column'] = safe_get_column(df_raw, 'source_column', '')
+```
+
+---
+
+### 2. 系统日期 vs 数据日期
+
+❌ **错误做法**:
+```python
+today = datetime.now().strftime('%Y-%m-%d')
+print(f"最新数据日期: {today}")  # 显示系统日期
+```
+
+✅ **正确做法**:
+```python
+cursor.execute("SELECT MAX(trade_date) FROM daily_limit_stats")
+latest_date = cursor.fetchone()[0]
+print(f"最新数据日期: {latest_date}")  # 显示实际数据日期
+```
+
+---
+
+### 3. 代码更新但服务未重启
+
+❌ **错误做法**:
+```bash
+git pull
+# 以为代码会自动生效
+```
+
+✅ **正确做法**:
+```bash
+git pull
+docker compose restart realtime  # 必须重启服务
+```
+
+---
+
+### 4. 数据库字段缺失
+
+❌ **错误做法**:
+```python
+cursor.execute("INSERT INTO table (a, b, c, new_field) VALUES (...)")
+# 如果 new_field 不存在，直接报错
+```
+
+✅ **正确做法**:
+```bash
+# 先检查字段是否存在
+./scripts/deploy-realtime-dynamic-sectors.sh
+# 自动检测并添加缺失字段
+```
+
+---
+
+### 5. 硬编码板块列表
+
+❌ **错误做法**:
+```python
+POPULAR_SECTORS = ['商业航天', '人形机器人', 'AI概念']
+for sector in POPULAR_SECTORS:
+    # 处理板块数据
+```
+
+✅ **正确做法**:
+```python
+cursor.execute("""
+    SELECT DISTINCT limit_reason FROM daily_limit_stats
+    WHERE trade_date = %s AND limit_reason IS NOT NULL
+""", (trade_date,))
+sectors = [row[0] for row in cursor.fetchall()]  # 动态提取
+```
+
+---
+
+## 性能优化建议
+
+### 1. 数据库索引
+
+```sql
+-- 加速按日期查询
+CREATE INDEX idx_daily_limit_stats_trade_date
+ON daily_limit_stats(trade_date);
+
+-- 加速板块关联查询
+CREATE INDEX idx_daily_limit_stats_limit_reason
+ON daily_limit_stats(limit_reason);
+
+-- 加速板块统计查询
+CREATE INDEX idx_sector_daily_stats_trade_date
+ON sector_daily_stats(trade_date, limit_up_count DESC);
+```
+
+### 2. 数据采集频率
+
+- **交易时段**（9:30-15:00）：每 **5 分钟** 采集一次
+- **盘后时段**（15:00-23:00）：每 **15 分钟** 采集一次
+- **休市时段**（23:00-9:00）：每 **1 小时** 采集一次
+
+### 3. 缓存策略
+
+```python
+# 板块统计结果缓存 5 分钟
+@cache(ttl=300)
+def get_sector_stats(trade_date):
+    # ...
+```
+
+---
+
+## 监控与告警
+
+### 关键指标
+
+1. **数据采集成功率**
+   ```python
+   logger.info(f"✅ 采集成功！共 {stocks_count} 只股票")
+   ```
+
+2. **板块聚合数量**
+   ```python
+   logger.info(f"✅ 聚合完成！共 {sectors_count} 个板块")
+   ```
+
+3. **API 调用延迟**
+   ```python
+   start = time.time()
+   df = ak.stock_zt_pool_em(date=date_str)
+   logger.info(f"⏱️  API 耗时: {time.time() - start:.2f}s")
+   ```
+
+### 错误告警
+
+```python
+try:
+    # 数据采集逻辑
+except Exception as e:
+    logger.error(f"❌ 采集失败: {e}")
+    # 发送钉钉/企业微信告警
+    send_alert(f"数据采集失败: {e}")
+```
+
+---
+
+## 版本历史
+
+| 版本 | 日期 | 修改内容 | 提交 |
+|------|------|---------|------|
+| v1.0 | 2025-12-30 | 初始实现动态板块分析 | `bd00408` |
+| v1.1 | 2025-12-31 | 修复 DataFrame 列访问 TypeError | `e51889b` |
+| v1.2 | 2025-12-31 | 修复数据日期显示错误 | `6bf1638` |
+| v1.3 | 2025-12-31 | UI 改为表格展示 + 排序 | `75572f6` |
+
+---
+
+## 参考资料
+
+- [AkShare 涨停池 API 文档](https://zhuanlan.zhihu.com/p/504950906)
+- [Pandas DataFrame 列访问最佳实践](https://pandas.pydata.org/docs/user_guide/indexing.html)
+- [PostgreSQL 聚合函数文档](https://www.postgresql.org/docs/current/functions-aggregate.html)
+
+---
+
+**最后更新**: 2025-12-31
+**维护者**: Claude AI Assistant
