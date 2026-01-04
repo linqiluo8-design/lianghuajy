@@ -70,10 +70,14 @@ class AkShareSource(DataSourceBase):
                 logger.warning(f"⚠️ 获取涨停池失败: {e}")
                 df_zt = pd.DataFrame()
 
-            # 2. 跌停池数据（注意：AkShare没有stock_dt_pool_em接口）
-            # 暂时跳过跌停池，只关注涨停数据
-            df_dt = pd.DataFrame()
-            logger.info(f"ℹ️  跌停池暂未获取（AkShare无此接口）")
+            # 2. 获取跌停池数据（使用 stock_zt_pool_dtgc_em 接口）
+            try:
+                df_dt = ak.stock_zt_pool_dtgc_em(date=today)
+                df_dt['limit_type'] = 'limit_down'
+                logger.info(f"✅ AkShare: 获取跌停池 {len(df_dt)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取跌停池失败: {e}")
+                df_dt = pd.DataFrame()
 
             # 3. 合并涨停和跌停数据
             if not df_zt.empty and not df_dt.empty:
