@@ -61,20 +61,54 @@ class AkShareSource(DataSourceBase):
             # 获取今日日期
             today = datetime.now().strftime("%Y%m%d")
 
-            # 使用强势涨停池 API（包含所属行业和入选理由）
+            # 策略：同时获取基础池和强势池，合并数据
+            # 1. 获取基础涨停池（所有涨停，数据最全）
             try:
-                df_raw = ak.stock_zt_pool_strong_em(date=today)
-                df_raw['limit_type'] = 'limit_up'
-                logger.info(f"✅ AkShare: 获取强势涨停池 {len(df_raw)} 只股票")
+                df_basic = ak.stock_zt_pool_em(date=today)
+                df_basic['limit_type'] = 'limit_up'
+                logger.info(f"✅ AkShare: 获取基础涨停池 {len(df_basic)} 只股票")
             except Exception as e:
-                logger.error(f"❌ 获取强势涨停池失败: {e}")
+                logger.error(f"❌ 获取基础涨停池失败: {e}")
                 return pd.DataFrame()
 
-            if df_raw.empty:
-                logger.warning("⚠️ 强势涨停池为空")
+            if df_basic.empty:
+                logger.warning("⚠️ 基础涨停池为空")
                 return pd.DataFrame()
 
-            # 4. 字段映射和标准化（强势涨停池 API）
+            # 2. 获取强势涨停池（包含行业和入选理由）
+            try:
+                df_strong = ak.stock_zt_pool_strong_em(date=today)
+                logger.info(f"✅ AkShare: 获取强势涨停池 {len(df_strong)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取强势涨停池失败，将缺少行业字段: {e}")
+                df_strong = pd.DataFrame()
+
+            # 3. 合并数据：以基础池为主，用强势池补充行业信息
+            if not df_strong.empty:
+                # 创建强势池的代码->行业映射
+                strong_industry_map = df_strong.set_index('代码')['所属行业'].to_dict() if '所属行业' in df_strong.columns else {}
+                strong_reason_map = df_strong.set_index('代码')['入选理由'].to_dict() if '入选理由' in df_strong.columns else {}
+                strong_stats_map = df_strong.set_index('代码')['涨停统计'].to_dict() if '涨停统计' in df_strong.columns else {}
+                strong_time_map = df_strong.set_index('代码')['首次涨停时间'].to_dict() if '首次涨停时间' in df_strong.columns else {}
+
+                # 补充行业信息到基础池
+                df_basic['所属行业'] = df_basic['代码'].map(strong_industry_map).fillna('')
+                df_basic['入选理由'] = df_basic['代码'].map(strong_reason_map).fillna('')
+                df_basic['涨停统计'] = df_basic['代码'].map(strong_stats_map).fillna('1/1')
+                df_basic['首次涨停时间'] = df_basic['代码'].map(strong_time_map).fillna('')
+
+                logger.info(f"📊 数据合并完成：基础池{len(df_basic)}只 + 强势池行业信息")
+            else:
+                # 如果强势池获取失败，添加空的行业列
+                df_basic['所属行业'] = ''
+                df_basic['入选理由'] = ''
+                df_basic['涨停统计'] = '1/1'
+                df_basic['首次涨停时间'] = ''
+                logger.warning("⚠️ 未能获取行业信息，行业字段将为空")
+
+            df_raw = df_basic
+
+            # 4. 字段映射和标准化（基础涨停池 + 强势池补充）
             # 辅助函数：安全获取列数据
             def safe_get_column(df, col_name, default_value=''):
                 """安全获取DataFrame列，如果不存在返回默认值的Series"""
