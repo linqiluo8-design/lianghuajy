@@ -105,8 +105,35 @@ echo "🔄 步骤 3/5: 检测服务状态"
 SERVICE_STATUS=$(check_service_status)
 echo "  当前状态: $SERVICE_STATUS"
 
+NEED_RESTART=false
+
+# 检查是否需要重启
 if [ "$CODE_CHANGED" = true ] || [ "$SERVICE_STATUS" = "stopped" ]; then
+    NEED_RESTART=true
     echo "  ⚠️  需要重启服务 (代码变更: $CODE_CHANGED, 服务状态: $SERVICE_STATUS)"
+elif [ "$NEED_MIGRATION" = true ]; then
+    NEED_RESTART=true
+    echo "  ⚠️  数据库结构变更，需要重启服务"
+else
+    # 验证容器内代码是否包含必需的方法
+    echo "  🔍 验证容器内代码版本..."
+    CODE_CHECK=$(docker compose exec -T realtime python3 -c "
+from services.sector_aggregator import SectorAggregator
+import inspect
+has_method = hasattr(SectorAggregator, 'aggregate_limit_reasons')
+print('ok' if has_method else 'missing')
+" 2>/dev/null || echo "error")
+
+    if [ "$CODE_CHECK" != "ok" ]; then
+        NEED_RESTART=true
+        echo "  ⚠️  容器内代码版本过旧，需要重启服务"
+    else
+        echo "  ✅ 代码版本正常"
+    fi
+fi
+
+# 执行重启
+if [ "$NEED_RESTART" = true ]; then
     docker compose restart realtime
     echo "  ✅ 服务已重启"
 else
