@@ -110,12 +110,9 @@ class AkShareSource(DataSourceBase):
 
                 # 涨停详细信息（强势涨停池字段映射）
                 'limit_reason': safe_get_column(df_raw, '入选理由', ''),  # 强势池字段名
-                'concept_tags': '',  # 暂时留空，AkShare 免费 API 不提供
+                'concept_tags': pd.Series([''] * len(df_raw)),  # 暂时留空，AkShare 免费 API 不提供
                 'industry': safe_get_column(df_raw, '所属行业', ''),  # 强势池包含此字段
-                'consecutive_limit_days': df_raw.apply(
-                    lambda row: parse_consecutive_days(safe_get_column(df_raw, '涨停统计', '1').iloc[row.name]),
-                    axis=1
-                ).astype(int),
+                'consecutive_limit_days': safe_get_column(df_raw, '涨停统计', '1').apply(parse_consecutive_days).astype(int),
                 'first_limit_time': safe_get_column(df_raw, '首次涨停时间', ''),
 
                 # 封单信息

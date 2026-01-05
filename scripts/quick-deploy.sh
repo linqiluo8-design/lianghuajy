@@ -154,6 +154,40 @@ echo "⏳ 等待服务启动..."
 sleep 5
 
 # ==========================================
+# 步骤 3.5: 调试 AkShare API（可选）
+# ==========================================
+if [ "${DEBUG_AKSHARE:-false}" = "true" ]; then
+    echo ""
+    echo "🔍 步骤 3.5/5: 调试 AkShare API 返回结构"
+    docker compose exec -T realtime python3 << 'DEBUG_SCRIPT'
+import akshare as ak
+from datetime import datetime
+
+today = datetime.now().strftime('%Y%m%d')
+print(f"📅 测试日期: {today}")
+
+try:
+    print("🔍 调用 stock_zt_pool_strong_em()...")
+    df = ak.stock_zt_pool_strong_em(date=today)
+
+    print(f"✅ 获取成功！共 {len(df)} 只股票")
+    print("\n📋 API返回的列名:")
+    for i, col in enumerate(df.columns, 1):
+        print(f"  {i:2d}. '{col}'")
+
+    print("\n📊 前2条数据样例:")
+    print(df.head(2).to_string())
+
+except Exception as e:
+    print(f"❌ 调用失败: {e}")
+DEBUG_SCRIPT
+
+    echo ""
+    echo "⏸️  调试完成，按回车继续..."
+    read
+fi
+
+# ==========================================
 # 步骤 4: 手动触发数据采集和聚合
 # ==========================================
 echo ""
