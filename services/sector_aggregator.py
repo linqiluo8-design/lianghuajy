@@ -99,7 +99,7 @@ class SectorAggregator:
             if deleted_count > 0:
                 logger.info(f"🗑️  删除旧数据: {deleted_count} 条")
 
-            # 4. 检查实时数据是否包含概念板块信息（优先使用）
+            # 4. 优先级1：检查实时数据是否包含概念板块信息
             cursor.execute("""
                 SELECT COUNT(*) FROM daily_limit_stats
                 WHERE trade_date = %s
@@ -110,13 +110,30 @@ class SectorAggregator:
 
             if realtime_sector_count > 0:
                 # 实时数据包含概念板块，使用动态聚合
-                logger.info(f"🔥 检测到 {realtime_sector_count} 条概念板块数据，使用动态聚合")
+                logger.info(f"🔥 检测到 {realtime_sector_count} 条概念板块数据，使用概念板块聚合")
                 sector_count = self._aggregate_by_realtime_sectors(trade_date)
                 # 同时聚合涨停原因统计
                 self.aggregate_limit_reasons(trade_date)
                 return sector_count
 
-            # 5. 检查是否有股票-板块映射数据（兜底方案）
+            # 5. 优先级2：检查是否有行业数据
+            cursor.execute("""
+                SELECT COUNT(DISTINCT industry) FROM daily_limit_stats
+                WHERE trade_date = %s
+                AND (industry IS NOT NULL AND industry != '' AND industry != '-')
+            """, (trade_date,))
+
+            industry_count = cursor.fetchone()[0]
+
+            if industry_count > 0:
+                # 有行业数据，按行业聚合
+                logger.info(f"📊 检测到 {industry_count} 个行业，使用行业聚合")
+                sector_count = self._aggregate_by_industry(trade_date)
+                # 同时聚合涨停原因统计
+                self.aggregate_limit_reasons(trade_date)
+                return sector_count
+
+            # 6. 优先级3：检查是否有股票-板块映射数据
             cursor.execute("SELECT COUNT(*) FROM stock_sector_mapping")
             mapping_count = cursor.fetchone()[0]
 
@@ -284,6 +301,100 @@ class SectorAggregator:
             """, (trade_date,))
 
             logger.info("🔥 热门涨停板块Top10:")
+            for row in cursor.fetchall():
+                logger.info(f"  {row[0]}: 涨停{row[1]}, 跌停{row[2]}, 总数{row[3]}")
+
+            return rows_inserted
+
+        finally:
+            cursor.close()
+
+    def _aggregate_by_industry(self, trade_date: str) -> int:
+        """按行业聚合（当concept_tags为空时使用）"""
+        cursor = self.db_conn.cursor()
+
+        try:
+            # 1. 获取所有行业
+            cursor.execute("""
+                SELECT DISTINCT TRIM(industry) AS industry_name
+                FROM daily_limit_stats
+                WHERE trade_date = %s
+                AND industry IS NOT NULL
+                AND industry != ''
+                AND industry != '-'
+            """, (trade_date,))
+
+            industries = [row[0] for row in cursor.fetchall() if row[0] and row[0].strip()]
+            industries = sorted(set(industries))
+            logger.info(f"📊 发现 {len(industries)} 个行业: {', '.join(industries[:10])}...")
+
+            # 2. 确保所有行业在 sectors 表中存在
+            for industry_name in industries:
+                cursor.execute("""
+                    INSERT INTO sectors (sector_code, sector_name, sector_type, stock_count)
+                    VALUES (%s, %s, 'industry', 0)
+                    ON CONFLICT (sector_code) DO NOTHING
+                """, (f"IND_{industry_name}", industry_name))
+
+            self.db_conn.commit()
+
+            # 3. 按行业聚合涨跌停数据
+            cursor.execute("""
+                INSERT INTO sector_daily_stats (
+                    trade_date, sector_id, sector_name,
+                    limit_up_count, limit_down_count,
+                    one_word_count, one_word_limit_down_count,
+                    broken_count, broken_resealed_count, broken_not_resealed_count,
+                    consecutive_2_count, consecutive_3_count,
+                    consecutive_4_count, consecutive_5_plus_count,
+                    total_stocks, avg_change_pct, total_turnover,
+                    created_at
+                )
+                SELECT
+                    %s AS trade_date,
+                    s.id AS sector_id,
+                    s.sector_name,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' THEN 1 ELSE 0 END) AS limit_up_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' THEN 1 ELSE 0 END) AS limit_down_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_up' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_count,
+                    SUM(CASE WHEN dls.limit_type = 'limit_down' AND dls.is_one_word = TRUE THEN 1 ELSE 0 END) AS one_word_limit_down_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE THEN 1 ELSE 0 END) AS broken_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = TRUE THEN 1 ELSE 0 END) AS broken_resealed_count,
+                    SUM(CASE WHEN dls.is_broken = TRUE AND dls.is_resealed = FALSE THEN 1 ELSE 0 END) AS broken_not_resealed_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 2 THEN 1 ELSE 0 END) AS consecutive_2_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 3 THEN 1 ELSE 0 END) AS consecutive_3_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days = 4 THEN 1 ELSE 0 END) AS consecutive_4_count,
+                    SUM(CASE WHEN dls.consecutive_limit_days >= 5 THEN 1 ELSE 0 END) AS consecutive_5_plus_count,
+                    COUNT(DISTINCT dls.stock_code) AS total_stocks,
+                    AVG(dls.change_pct) AS avg_change_pct,
+                    SUM(dls.turnover) AS total_turnover,
+                    NOW() AS created_at
+                FROM daily_limit_stats dls
+                JOIN sectors s ON TRIM(dls.industry) = s.sector_name AND s.sector_type = 'industry'
+                WHERE dls.trade_date = %s
+                AND dls.industry IS NOT NULL
+                AND dls.industry != ''
+                AND dls.industry != '-'
+                GROUP BY s.id, s.sector_name
+                HAVING COUNT(DISTINCT dls.stock_code) > 0
+                ORDER BY limit_up_count DESC
+            """, (trade_date, trade_date))
+
+            rows_inserted = cursor.rowcount
+            self.db_conn.commit()
+
+            logger.info(f"✅ 行业聚合完成！插入 {rows_inserted} 个行业统计")
+
+            # 显示前10个热门行业的统计
+            cursor.execute("""
+                SELECT sector_name, limit_up_count, limit_down_count, total_stocks
+                FROM sector_daily_stats
+                WHERE trade_date = %s
+                ORDER BY limit_up_count DESC
+                LIMIT 10
+            """, (trade_date,))
+
+            logger.info("🔥 热门涨停行业Top10:")
             for row in cursor.fetchall():
                 logger.info(f"  {row[0]}: 涨停{row[1]}, 跌停{row[2]}, 总数{row[3]}")
 
