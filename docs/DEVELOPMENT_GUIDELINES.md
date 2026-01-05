@@ -24,6 +24,12 @@
    - 显示板块内涨停个股数量
    - 严格遵守同花顺展示格式
 
+5. **问题修复与部署自动化** ⭐⭐⭐⭐⭐
+   - 所有问题修复必须记录文档
+   - 一键部署脚本持续完善
+   - 脚本智能判断执行步骤
+   - 避免重复操作（幂等性）
+
 ---
 
 ## 📋 目录
@@ -261,6 +267,154 @@ AI概念涨停突破    |   30    |   0    |  0
 | 辅助视图 | `limit_reason` | 原因分析 | 板块轮动 |
 
 **两者都保留，分别展示！**
+
+---
+
+### 5. 问题修复与部署自动化原则 ⭐⭐⭐⭐⭐
+**所有问题修复都要记录文档，一键部署脚本持续完善**
+
+> "修复问题不仅要解决当前bug，更要确保未来不会重复出现。文档记录问题，脚本自动化部署，才能持续提升系统质量。"
+
+**核心要求**：
+
+1. **问题必须文档化**
+   - 每个问题修复都记录到 `DEVELOPMENT_GUIDELINES.md`
+   - 包含：时间、影响、错误信息、根本原因、修复方案
+   - 提供正确/错误示例对比
+   - 记录关键要点避免重复
+
+2. **部署脚本智能化**
+   - 检测环境状态，按需执行
+   - 避免重复操作（幂等性）
+   - 提供清晰的执行反馈
+   - 失败时给出明确指引
+
+3. **修复自动化落地**
+   - 数据库迁移：检查字段是否存在
+   - 代码更新：检测文件变更
+   - 服务重启：仅在必要时重启
+   - 数据聚合：验证后再执行
+
+**智能部署脚本示例**：
+
+```bash
+#!/bin/bash
+# 智能部署脚本 - 按需执行
+
+# 1. 检查数据库字段
+check_db_field() {
+    docker compose exec -T postgres psql -U funcat_user -d funcat -tAc "
+        SELECT column_name FROM information_schema.columns
+        WHERE table_name='daily_limit_stats' AND column_name='$1'
+    "
+}
+
+# 2. 检查表是否存在
+check_table_exists() {
+    docker compose exec -T postgres psql -U funcat_user -d funcat -tAc "
+        SELECT tablename FROM pg_tables
+        WHERE tablename='$1'
+    "
+}
+
+# 3. 检测代码变更
+check_code_changed() {
+    git diff HEAD~1 HEAD --name-only | grep -q "$1"
+}
+
+# 智能执行
+echo "🔍 检测环境状态..."
+
+# 检查字段是否存在
+if [ -z "$(check_db_field 'concept_tags')" ]; then
+    echo "⚠️  字段 concept_tags 不存在，执行迁移"
+    docker compose exec -T postgres psql -U funcat_user -d funcat < migrations/004_add_sector_fields.sql
+else
+    echo "✅ 字段 concept_tags 已存在，跳过迁移"
+fi
+
+# 检查表是否存在
+if [ -z "$(check_table_exists 'limit_reason_stats')" ]; then
+    echo "⚠️  表 limit_reason_stats 不存在，创建表"
+    docker compose exec -T postgres psql -U funcat_user -d funcat < migrations/005_create_limit_reason_stats.sql
+else
+    echo "✅ 表 limit_reason_stats 已存在，跳过创建"
+fi
+
+# 检测代码变更
+if check_code_changed "services/"; then
+    echo "⚠️  检测到服务代码变更，重启服务"
+    docker compose restart realtime
+else
+    echo "✅ 服务代码未变更，跳过重启"
+fi
+```
+
+**幂等性原则**：
+- ✅ 多次执行脚本结果一致
+- ✅ 检查状态再执行操作
+- ✅ 避免重复创建/插入
+- ✅ 使用 `IF NOT EXISTS`、`ON CONFLICT DO NOTHING`
+
+**文档记录规范**：
+
+每个问题修复必须包含：
+1. **问题标题** - 简明扼要
+2. **时间** - 发生日期
+3. **影响** - 系统影响范围
+4. **错误信息** - 完整错误日志
+5. **根本原因** - 深层原因分析
+6. **修复方案** - 具体解决步骤
+7. **文件位置** - 修改的文件
+8. **提交哈希** - Git commit ID
+9. **关键要点** - 避免重复的经验
+
+**示例**（问题修复记录模板）：
+```markdown
+### 问题 X: 简短描述
+
+**时间**: YYYY-MM-DD
+**影响**: 功能无法使用
+**错误信息**:
+\`\`\`
+Error message here
+\`\`\`
+
+**根本原因**:
+- 原因1
+- 原因2
+
+**修复方案**:
+\`\`\`python
+# ❌ 错误代码
+old_code()
+
+# ✅ 正确代码
+new_code()
+\`\`\`
+
+**文件**: `path/to/file.py:123`
+**提交**: `abc1234`
+
+**关键要点**:
+- ✅ 要点1
+- ✅ 要点2
+```
+
+**部署脚本进化**：
+
+```
+v1.0 → 基础部署（拉代码、重启）
+v2.0 → 检测迁移（数据库字段检查）
+v3.0 → 智能执行（按需执行步骤）
+v4.0 → 自愈能力（自动修复常见问题）
+```
+
+**持续改进**：
+- 每次问题修复后，更新部署脚本
+- 添加相应的检测和处理逻辑
+- 记录到文档的"部署流程"章节
+- 提交代码时包含脚本改进
 
 ---
 
