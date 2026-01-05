@@ -111,7 +111,10 @@ class SectorAggregator:
             if realtime_sector_count > 0:
                 # 实时数据包含概念板块，使用动态聚合
                 logger.info(f"🔥 检测到 {realtime_sector_count} 条概念板块数据，使用动态聚合")
-                return self._aggregate_by_realtime_sectors(trade_date)
+                sector_count = self._aggregate_by_realtime_sectors(trade_date)
+                # 同时聚合涨停原因统计
+                self.aggregate_limit_reasons(trade_date)
+                return sector_count
 
             # 5. 检查是否有股票-板块映射数据（兜底方案）
             cursor.execute("SELECT COUNT(*) FROM stock_sector_mapping")
@@ -120,11 +123,18 @@ class SectorAggregator:
             if mapping_count == 0:
                 # 没有映射，只聚合到"全市场"
                 logger.info("ℹ️  没有板块数据，聚合到'全市场'板块")
-                return self._aggregate_to_all_market(trade_date)
+                sector_count = self._aggregate_to_all_market(trade_date)
+                # 同时聚合涨停原因统计
+                reason_count = self.aggregate_limit_reasons(trade_date)
+                logger.info(f"📊 聚合完成：全市场板块 + {reason_count} 个涨停原因")
+                return sector_count
             else:
                 # 有映射，按板块聚合
                 logger.info(f"📊 检测到 {mapping_count} 条板块映射，按细分板块聚合")
-                return self._aggregate_by_sectors(trade_date)
+                sector_count = self._aggregate_by_sectors(trade_date)
+                # 同时聚合涨停原因统计
+                self.aggregate_limit_reasons(trade_date)
+                return sector_count
 
         except Exception as e:
             self.db_conn.rollback()
