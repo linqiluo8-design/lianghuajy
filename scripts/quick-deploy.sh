@@ -132,10 +132,19 @@ print('ok' if has_method else 'missing')
     fi
 fi
 
-# 执行重启
+# 执行重启或重新构建
 if [ "$NEED_RESTART" = true ]; then
-    docker compose restart realtime
-    echo "  ✅ 服务已重启"
+    # 如果是代码版本问题，需要重新构建镜像
+    if [ "$CODE_CHECK" = "error" ] || [ "$CODE_CHECK" = "missing" ]; then
+        echo "  🔨 重新构建 realtime 镜像（代码已更新）..."
+        docker compose build --no-cache realtime
+        echo "  🔄 启动新镜像..."
+        docker compose up -d realtime
+    else
+        # 其他情况只需重启
+        docker compose restart realtime
+    fi
+    echo "  ✅ 服务已更新"
 else
     echo "  ✅ 无需重启服务"
 fi
