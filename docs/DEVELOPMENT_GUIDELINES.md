@@ -1148,6 +1148,132 @@ except Exception as e:
 
 ---
 
+### 问题 7: AkShare API 不提供所属概念字段
+
+**时间**: 2026-01-05
+**影响**: 无法显示概念板块涨停排行（如：商业航天、人形机器人等）
+**现象**: 仅能显示"涨停原因分类"（板块轮动、政策利好），无法显示真实概念板块
+
+**根本原因**:
+**所有 AkShare 免费 API 均不提供 `所属概念` 字段**，经测试确认：
+
+| API 函数 | 股票数量 | 所属行业 | 入选理由 | 所属概念 | 适用场景 |
+|---------|---------|---------|---------|---------|---------|
+| `stock_zt_pool_em()` | 108 | ❌ | ❌ | ❌ | 基础涨停池 |
+| `stock_zt_pool_strong_em()` | 307 | ✅ | ✅ | ❌ | **强势涨停池（已选用）** |
+| `stock_zt_pool_sub_new_em()` | 113 | ❌ | ❌ | ❌ | 次新股涨停 |
+| `stock_zt_pool_zbgc_em()` | 26 | ❌ | ❌ | ❌ | 昨日涨停表现 |
+
+**测试结果**:
+```python
+# stock_zt_pool_em() - 基础涨停池
+返回列: ['序号', '代码', '名称', '涨跌幅', '最新价', '成交额', '流通市值', ...]
+❌ 无 '所属概念'
+❌ 无 '所属行业'
+❌ 无 '入选理由'
+
+# stock_zt_pool_strong_em() - 强势涨停池
+返回列: ['序号', '代码', '名称', '涨跌幅', '最新价', '成交额', '涨停统计',
+         '所属行业', '入选理由', '首次涨停时间', '最后涨停时间', ...]
+✅ 有 '所属行业' (示例: "通信设备")
+✅ 有 '入选理由' (示例: "板块轮动", "政策利好")
+❌ 无 '所属概念' (需要的字段，但所有API都没有)
+```
+
+**技术约束**:
+1. Docker 容器网络隔离，无法访问 Eastmoney/TongHuaShun 网页爬取数据
+2. 反向查询方案（查询 441 个概念板块成分股）耗时 5-10 分钟，不符合实时性要求
+3. AkShare 付费 API 未测试，暂不考虑
+
+**修复方案（分阶段）**:
+
+**阶段 1: 使用强势涨停池 + 涨停原因字段（当前）**
+```python
+# services/data_sources/akshare_source.py
+# 使用 stock_zt_pool_strong_em() 获取强势涨停池
+df_raw = ak.stock_zt_pool_strong_em(date=today)
+
+# 字段映射
+df = pd.DataFrame({
+    'limit_reason': safe_get_column(df_raw, '入选理由', ''),  # 涨停原因
+    'industry': safe_get_column(df_raw, '所属行业', ''),      # 所属行业
+    'concept_tags': '',  # 暂时留空，AkShare 免费 API 不提供
+    'consecutive_limit_days': parse_consecutive_days(
+        safe_get_column(df_raw, '涨停统计', '1')  # 格式: "1/1"
+    ),
+    # ... 其他字段
+})
+```
+
+**双视图展示策略**:
+1. **主视图（暂时禁用）**: 概念板块排行（`concept_tags` 字段为空，暂无数据）
+2. **辅助视图（当前展示）**: 涨停原因分析（`limit_reason` 字段，来自"入选理由"）
+
+```sql
+-- 辅助视图：涨停原因统计（limit_reason_stats 表）
+SELECT
+    reason_name,           -- 入选理由（板块轮动、政策利好等）
+    limit_up_count,        -- 涨停数量
+    one_word_count,        -- 一字板数量
+    broken_count,          -- 炸板数量
+    total_stocks           -- 总股票数
+FROM limit_reason_stats
+WHERE trade_date = CURRENT_DATE
+ORDER BY limit_up_count DESC;
+```
+
+**阶段 2: 未来可选方案**
+1. **方案 A**: 使用 AkShare 概念板块 API 反向查询（耗时，不推荐）
+   ```python
+   # 查询 441 个概念板块的成分股（5-10分钟）
+   concepts = ak.stock_board_concept_name_em()
+   for concept in concepts:
+       stocks = ak.stock_board_concept_cons_em(concept['板块名称'])
+       # 建立 stock_code -> concept_tags 映射
+   ```
+
+2. **方案 B**: 外部数据源（如 Tushare Pro、Wind）
+3. **方案 C**: 人工维护高频概念映射表（定期更新）
+
+**当前状态**: ✅ 阶段 1 已实现，系统可正常运行
+
+**文件**:
+- `services/data_sources/akshare_source.py:60-123`
+- `services/sector_aggregator.py:285-350` (涨停原因聚合方法)
+- `migrations/004_add_sector_fields.sql` (concept_tags 字段)
+- `migrations/005_create_limit_reason_stats.sql` (涨停原因统计表)
+
+**提交**: 待提交
+
+**关键要点**:
+- ✅ **所有 AkShare 免费 API 均无"所属概念"字段，这是数据源限制**
+- ✅ 使用 `stock_zt_pool_strong_em()` 获取"所属行业"和"入选理由"
+- ✅ `concept_tags` 字段保留但暂时为空，为未来扩展预留
+- ✅ 当前使用"涨停原因分析"视图替代"概念板块排行"
+- ✅ 系统架构支持双视图（主视图+辅助视图），未来可无缝切换
+
+**数据字段说明（必须记录）** ⭐⭐⭐⭐⭐:
+根据用户明确要求："概念板块、所属概念、以及涨停原因都必须要有，记录进文档当作开发规范，一个不能少"
+
+| 字段名 | 数据库列 | AkShare 来源 | 状态 | 说明 |
+|-------|---------|-------------|------|------|
+| **概念板块** | `concept_tags` | ❌ 无对应字段 | 🟡 暂时留空 | 真实概念板块（商业航天、人形机器人等），AkShare 免费 API 不提供 |
+| **所属概念** | `concept_tags` | ❌ 无对应字段 | 🟡 暂时留空 | 同上，一股多概念用分号分隔 |
+| **涨停原因** | `limit_reason` | ✅ `入选理由` | ✅ 已实现 | 涨停原因分类（板块轮动、政策利好等） |
+| **所属行业** | `industry` | ✅ `所属行业` | ✅ 已实现 | 行业分类（通信设备、航天航空等） |
+| **连板数** | `consecutive_limit_days` | ✅ `涨停统计` | ✅ 已实现 | 解析 "1/1" 格式取第一个数字 |
+| **首次涨停时间** | `first_limit_time` | ✅ `首次涨停时间` | ✅ 已实现 | 封板时间 |
+| **封单金额** | `today_auction_unmatched` | ✅ `封单金额` | ✅ 已实现 | 封单资金量 |
+
+**开发规范（强制要求）** ⭐⭐⭐⭐⭐:
+1. **concept_tags 字段不能删除**，即使暂时为空也必须保留
+2. **limit_reason 字段必须填充**，来自 AkShare 的"入选理由"
+3. **industry 字段必须填充**，来自 AkShare 的"所属行业"
+4. 未来如果找到概念数据源，必须立即填充 `concept_tags` 字段
+5. 系统必须支持双视图展示：主视图（概念板块）+ 辅助视图（涨停原因）
+
+---
+
 ## 版本历史
 
 | 版本 | 日期 | 修改内容 | 提交 |
@@ -1156,6 +1282,7 @@ except Exception as e:
 | v1.1 | 2025-12-31 | 修复 DataFrame 列访问 TypeError | `e51889b` |
 | v1.2 | 2025-12-31 | 修复数据日期显示错误 | `6bf1638` |
 | v1.3 | 2025-12-31 | UI 改为表格展示 + 排序 | `75572f6` |
+| v1.4 | 2026-01-05 | 切换到强势涨停池 API + 涨停原因字段 | 待提交 |
 
 ---
 

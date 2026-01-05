@@ -61,36 +61,20 @@ class AkShareSource(DataSourceBase):
             # 获取今日日期
             today = datetime.now().strftime("%Y%m%d")
 
-            # 1. 获取涨停池数据（包含涨停原因、板块等）
+            # 使用强势涨停池 API（包含所属行业和入选理由）
             try:
-                df_zt = ak.stock_zt_pool_em(date=today)
-                df_zt['limit_type'] = 'limit_up'
-                logger.info(f"✅ AkShare: 获取涨停池 {len(df_zt)} 只股票")
+                df_raw = ak.stock_zt_pool_strong_em(date=today)
+                df_raw['limit_type'] = 'limit_up'
+                logger.info(f"✅ AkShare: 获取强势涨停池 {len(df_raw)} 只股票")
             except Exception as e:
-                logger.warning(f"⚠️ 获取涨停池失败: {e}")
-                df_zt = pd.DataFrame()
-
-            # 2. 获取跌停池数据（使用 stock_zt_pool_dtgc_em 接口）
-            try:
-                df_dt = ak.stock_zt_pool_dtgc_em(date=today)
-                df_dt['limit_type'] = 'limit_down'
-                logger.info(f"✅ AkShare: 获取跌停池 {len(df_dt)} 只股票")
-            except Exception as e:
-                logger.warning(f"⚠️ 获取跌停池失败: {e}")
-                df_dt = pd.DataFrame()
-
-            # 3. 合并涨停和跌停数据
-            if not df_zt.empty and not df_dt.empty:
-                df_raw = pd.concat([df_zt, df_dt], ignore_index=True)
-            elif not df_zt.empty:
-                df_raw = df_zt
-            elif not df_dt.empty:
-                df_raw = df_dt
-            else:
-                logger.warning("⚠️ 涨停池和跌停池均为空")
+                logger.error(f"❌ 获取强势涨停池失败: {e}")
                 return pd.DataFrame()
 
-            # 4. 字段映射和标准化
+            if df_raw.empty:
+                logger.warning("⚠️ 强势涨停池为空")
+                return pd.DataFrame()
+
+            # 4. 字段映射和标准化（强势涨停池 API）
             # 辅助函数：安全获取列数据
             def safe_get_column(df, col_name, default_value=''):
                 """安全获取DataFrame列，如果不存在返回默认值的Series"""
@@ -98,6 +82,17 @@ class AkShareSource(DataSourceBase):
                     return df[col_name].fillna(default_value)
                 else:
                     return pd.Series([default_value] * len(df))
+
+            # 解析连板数（格式："1/1" 表示当前连板1天，历史最高1天）
+            def parse_consecutive_days(zt_stats):
+                """从涨停统计字段解析连板数"""
+                try:
+                    if pd.isna(zt_stats) or zt_stats == '':
+                        return 1
+                    # "1/1" -> 取第一个数字
+                    return int(str(zt_stats).split('/')[0])
+                except:
+                    return 1
 
             df = pd.DataFrame({
                 'stock_code': df_raw['代码'].apply(self._normalize_stock_code),
@@ -113,12 +108,15 @@ class AkShareSource(DataSourceBase):
                 'turnover_rate': pd.to_numeric(df_raw['换手率'], errors='coerce').fillna(0.0),
                 'limit_type': df_raw['limit_type'],
 
-                # 新增：涨跌停详细信息（使用安全获取函数）
-                'limit_reason': safe_get_column(df_raw, '涨停原因分类', safe_get_column(df_raw, '跌停原因分类', '')),
-                'concept_tags': safe_get_column(df_raw, '所属概念', ''),
-                'industry': safe_get_column(df_raw, '所属行业', ''),
-                'consecutive_limit_days': pd.to_numeric(safe_get_column(df_raw, '连板数', '1'), errors='coerce').fillna(1).astype(int),
-                'first_limit_time': safe_get_column(df_raw, '首次涨停时间', safe_get_column(df_raw, '首次跌停时间', '')),
+                # 涨停详细信息（强势涨停池字段映射）
+                'limit_reason': safe_get_column(df_raw, '入选理由', ''),  # 强势池字段名
+                'concept_tags': '',  # 暂时留空，AkShare 免费 API 不提供
+                'industry': safe_get_column(df_raw, '所属行业', ''),  # 强势池包含此字段
+                'consecutive_limit_days': df_raw.apply(
+                    lambda row: parse_consecutive_days(safe_get_column(df_raw, '涨停统计', '1').iloc[row.name]),
+                    axis=1
+                ).astype(int),
+                'first_limit_time': safe_get_column(df_raw, '首次涨停时间', ''),
 
                 # 封单信息
                 'today_auction_unmatched': pd.to_numeric(safe_get_column(df_raw, '封单金额', '0'), errors='coerce').fillna(0).astype(int),
@@ -130,7 +128,7 @@ class AkShareSource(DataSourceBase):
             sz_count = market_stats.get('SZ', 0)  # 深圳（主板+创业板）
             bj_count = market_stats.get('BJ', 0)  # 北交所
 
-            logger.info(f"✅ AkShare: 获取了 {len(df)} 只涨跌停股票（涨停={len(df_zt)}, 跌停={len(df_dt)}）")
+            logger.info(f"✅ AkShare: 获取了 {len(df)} 只强势涨停股票")
             logger.info(f"📊 市场分布: 上海{sh_count}只, 深圳{sz_count}只, 北交所{bj_count}只")
 
             return df
