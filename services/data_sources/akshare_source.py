@@ -61,21 +61,38 @@ class AkShareSource(DataSourceBase):
             # 获取今日日期
             today = datetime.now().strftime("%Y%m%d")
 
-            # 策略：同时获取基础池和强势池，合并数据
-            # 1. 获取基础涨停池（所有涨停，数据最全）
+            all_data = []
+
+            # 策略：同时获取涨停池和跌停池，合并数据
+            # 1. 获取基础涨停池（所有涨停）
             try:
-                df_basic = ak.stock_zt_pool_em(date=today)
-                df_basic['limit_type'] = 'limit_up'
-                logger.info(f"✅ AkShare: 获取基础涨停池 {len(df_basic)} 只股票")
+                df_limit_up = ak.stock_zt_pool_em(date=today)
+                if not df_limit_up.empty:
+                    df_limit_up['limit_type'] = 'limit_up'
+                    all_data.append(df_limit_up)
+                    logger.info(f"✅ AkShare: 获取基础涨停池 {len(df_limit_up)} 只股票")
             except Exception as e:
-                logger.error(f"❌ 获取基础涨停池失败: {e}")
+                logger.warning(f"⚠️ 获取基础涨停池失败: {e}")
+
+            # 2. 获取跌停池（所有跌停）
+            try:
+                df_limit_down = ak.stock_dt_pool_em(date=today)
+                if not df_limit_down.empty:
+                    df_limit_down['limit_type'] = 'limit_down'
+                    all_data.append(df_limit_down)
+                    logger.info(f"✅ AkShare: 获取跌停池 {len(df_limit_down)} 只股票")
+            except Exception as e:
+                logger.warning(f"⚠️ 获取跌停池失败: {e}")
+
+            # 3. 合并涨停和跌停数据
+            if not all_data:
+                logger.warning("⚠️ 涨停池和跌停池均为空")
                 return pd.DataFrame()
 
-            if df_basic.empty:
-                logger.warning("⚠️ 基础涨停池为空")
-                return pd.DataFrame()
+            df_basic = pd.concat(all_data, ignore_index=True)
+            logger.info(f"📊 数据合并：涨停{len(df_limit_up) if 'df_limit_up' in locals() and not df_limit_up.empty else 0}只 + 跌停{len(df_limit_down) if 'df_limit_down' in locals() and not df_limit_down.empty else 0}只 = 总计{len(df_basic)}只")
 
-            # 2. 获取强势涨停池（包含行业和入选理由）
+            # 4. 获取强势涨停池（包含行业和入选理由）
             try:
                 df_strong = ak.stock_zt_pool_strong_em(date=today)
                 logger.info(f"✅ AkShare: 获取强势涨停池 {len(df_strong)} 只股票")
@@ -153,13 +170,32 @@ class AkShareSource(DataSourceBase):
                 'today_auction_unmatched': pd.to_numeric(safe_get_column(df_raw, '封单金额', '0'), errors='coerce').fillna(0).astype(int),
             })
 
+            # 5. 判断一字板（一字涨停/一字跌停）
+            # 逻辑：开盘价 = 最高价 = 最低价 = 收盘价
+            df['is_one_word'] = (
+                (df['open_price'] == df['price']) &
+                (df['high_price'] == df['price']) &
+                (df['low_price'] == df['price']) &
+                (df['open_price'] > 0)  # 排除无效数据
+            )
+
+            one_word_count = df['is_one_word'].sum()
+            logger.info(f"📊 一字板统计：{one_word_count} 只一字板（涨停或跌停）")
+
             # 统计各市场分布
             market_stats = df.groupby(df['stock_code'].str[-2:]).size().to_dict()
             sh_count = market_stats.get('SH', 0)  # 上海（主板+科创板）
             sz_count = market_stats.get('SZ', 0)  # 深圳（主板+创业板）
             bj_count = market_stats.get('BJ', 0)  # 北交所
 
-            logger.info(f"✅ AkShare: 获取了 {len(df)} 只强势涨停股票")
+            # 统计涨跌停分布
+            limit_up_count = (df['limit_type'] == 'limit_up').sum()
+            limit_down_count = (df['limit_type'] == 'limit_down').sum()
+            one_word_limit_up = ((df['limit_type'] == 'limit_up') & df['is_one_word']).sum()
+            one_word_limit_down = ((df['limit_type'] == 'limit_down') & df['is_one_word']).sum()
+
+            logger.info(f"✅ AkShare: 获取涨跌停数据 {len(df)} 只")
+            logger.info(f"📊 涨停: {limit_up_count}只 (一字:{one_word_limit_up}只) | 跌停: {limit_down_count}只 (一字:{one_word_limit_down}只)")
             logger.info(f"📊 市场分布: 上海{sh_count}只, 深圳{sz_count}只, 北交所{bj_count}只")
 
             return df
