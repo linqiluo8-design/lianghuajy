@@ -113,7 +113,7 @@ class AkShareSource(DataSourceBase):
                 'concept_tags': pd.Series([''] * len(df_raw)),  # 暂时留空，AkShare 免费 API 不提供
                 'industry': safe_get_column(df_raw, '所属行业', ''),  # 强势池包含此字段
                 'consecutive_limit_days': safe_get_column(df_raw, '涨停统计', '1').apply(parse_consecutive_days).astype(int),
-                'first_limit_time': safe_get_column(df_raw, '首次涨停时间', '').replace('', None),  # 空字符串转 None
+                'first_limit_time': safe_get_column(df_raw, '首次涨停时间', '').apply(lambda x: None if (x == '' or pd.isna(x)) else x),  # 空字符串/NaN 转 None
 
                 # 封单信息
                 'today_auction_unmatched': pd.to_numeric(safe_get_column(df_raw, '封单金额', '0'), errors='coerce').fillna(0).astype(int),
