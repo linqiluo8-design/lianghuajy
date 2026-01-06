@@ -46,10 +46,41 @@ echo "✅ realtime 服务已更新"
 echo ""
 
 # ============================================
-# 步骤 2: 重新运行数据聚合
+# 步骤 2: 运行数据库迁移（修复视图）
 # ============================================
 echo "================================================================================"
-echo "步骤 2/5: 重新聚合数据（使用行业字段）"
+echo "步骤 2/6: 运行数据库迁移"
+echo "================================================================================"
+echo ""
+
+echo "📝 执行迁移: 修复个股详情视图..."
+docker compose exec -T postgres psql -U funcat_user -d funcat -f /docker-entrypoint-initdb.d/../../../migrations/006_fix_stock_detail_view.sql 2>/dev/null || \
+docker compose exec -T postgres psql -U funcat_user -d funcat << 'SQL'
+-- 修复个股详情视图 - 支持基于 industry 字段查询
+CREATE OR REPLACE VIEW v_stock_limit_detail AS
+SELECT
+    dls.id, dls.trade_date, dls.stock_code, dls.stock_name, dls.sector_id,
+    COALESCE(dls.industry, s.sector_name) AS sector_name,
+    dls.open_price, dls.close_price, dls.high_price, dls.low_price, dls.pre_close,
+    dls.change_pct AS change_pct,
+    CASE WHEN dls.pre_close > 0 THEN ROUND(((dls.open_price - dls.pre_close) / dls.pre_close * 100)::NUMERIC, 2) ELSE 0 END AS open_change_pct,
+    dls.limit_type, dls.is_one_word, dls.is_broken, dls.is_resealed, dls.broken_count, dls.consecutive_limit_days,
+    CASE WHEN dls.consecutive_limit_days = 1 THEN '首板' WHEN dls.consecutive_limit_days = 2 THEN '2板' WHEN dls.consecutive_limit_days = 3 THEN '3板' WHEN dls.consecutive_limit_days = 4 THEN '4板' WHEN dls.consecutive_limit_days = 5 THEN '5板' WHEN dls.consecutive_limit_days >= 6 THEN dls.consecutive_limit_days || '板' ELSE '-' END AS board_description,
+    dls.limit_reason, dls.industry, dls.volume, dls.turnover, dls.turnover_rate, dls.seal_amount, dls.first_limit_time,
+    dls.yesterday_auction_unmatched, dls.today_auction_unmatched, dls.concept_tags, dls.created_at
+FROM daily_limit_stats dls
+LEFT JOIN sectors s ON dls.sector_id = s.id
+ORDER BY dls.trade_date DESC, dls.consecutive_limit_days DESC, dls.first_limit_time ASC;
+SQL
+
+echo "✅ 视图已修复"
+echo ""
+
+# ============================================
+# 步骤 3: 重新运行数据聚合
+# ============================================
+echo "================================================================================"
+echo "步骤 3/6: 重新聚合数据（使用行业字段）"
 echo "================================================================================"
 echo ""
 
@@ -85,10 +116,10 @@ PYTHON_SCRIPT
 echo ""
 
 # ============================================
-# 步骤 3: 验证数据正确性
+# 步骤 4: 验证数据正确性
 # ============================================
 echo "================================================================================"
-echo "步骤 3/5: 验证数据正确性"
+echo "步骤 4/6: 验证数据正确性"
 echo "================================================================================"
 echo ""
 
@@ -136,10 +167,10 @@ SQL
 echo ""
 
 # ============================================
-# 步骤 4: 重启 web-ui
+# 步骤 5: 重启 web-ui
 # ============================================
 echo "================================================================================"
-echo "步骤 4/5: 重启 web-ui 服务"
+echo "步骤 5/6: 重启 web-ui 服务"
 echo "================================================================================"
 echo ""
 
@@ -153,10 +184,10 @@ echo "✅ web-ui 已重启"
 echo ""
 
 # ============================================
-# 步骤 5: 显示访问信息
+# 步骤 6: 显示访问信息
 # ============================================
 echo "================================================================================"
-echo "步骤 5/5: 访问看板"
+echo "步骤 6/6: 访问看板"
 echo "================================================================================"
 echo ""
 
