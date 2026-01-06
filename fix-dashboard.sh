@@ -85,14 +85,53 @@ PYTHON_SCRIPT
 echo ""
 
 # ============================================
-# 步骤 3: 验证数据
+# 步骤 3: 验证数据正确性
 # ============================================
 echo "================================================================================"
 echo "步骤 3/5: 验证数据正确性"
 echo "================================================================================"
 echo ""
 
-docker compose exec -T realtime python3 /app/test_dashboard_fix.py
+echo "📊 检查数据库聚合结果..."
+docker compose exec -T postgres psql -U funcat_user -d funcat << 'SQL'
+\echo '----------------------------------------'
+\echo '1. 板块统计数据'
+\echo '----------------------------------------'
+SELECT
+    COUNT(*) as sector_count,
+    SUM(limit_up_count) as total_limit_up,
+    SUM(limit_down_count) as total_limit_down,
+    SUM(one_word_count) as total_one_word,
+    MAX(trade_date) as latest_date
+FROM sector_daily_stats
+WHERE trade_date = CURRENT_DATE;
+
+\echo ''
+\echo '----------------------------------------'
+\echo '2. 热门板块 Top5'
+\echo '----------------------------------------'
+SELECT
+    sector_name,
+    limit_up_count,
+    one_word_count,
+    limit_down_count
+FROM sector_daily_stats
+WHERE trade_date = CURRENT_DATE
+ORDER BY limit_up_count DESC
+LIMIT 5;
+
+\echo ''
+\echo '----------------------------------------'
+\echo '3. 涨停原因统计'
+\echo '----------------------------------------'
+SELECT
+    reason_name,
+    limit_up_count
+FROM limit_reason_stats
+WHERE trade_date = CURRENT_DATE
+ORDER BY limit_up_count DESC
+LIMIT 5;
+SQL
 
 echo ""
 
