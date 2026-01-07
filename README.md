@@ -297,3 +297,84 @@ set_data_backend(RQAlphaDataBackend("~/.rqalpha/bundle"))
 ```
 
 为了更高的性能，您也可以自定义Backend使用本地数据。这样可以极大地提高运行速度。
+
+---
+
+## 📦 涨跌停看板系统部署
+
+本项目包含一个完整的涨跌停数据看板系统，提供智能化的一键部署脚本。
+
+### 快速部署
+
+```bash
+# 全新环境首次部署
+bash deploy-from-scratch.sh --clean
+
+# 日常代码更新（智能增量构建）
+bash deploy-from-scratch.sh
+
+# 强制重新构建所有服务
+bash deploy-from-scratch.sh --force-rebuild
+```
+
+### 核心特性
+
+- ✅ **智能增量构建** - 自动检测服务变更，只重建必要的服务
+- ✅ **完整 CICD 流程** - Git pull → 变更检测 → 增量构建 → 数据验证
+- ✅ **性能优化** - 无变更 30秒部署，单服务变更 2-3分钟
+- ✅ **生产级可靠性** - 重试机制、健康检查、错误处理
+- ✅ **详细文档** - 完整的使用指南和故障排查手册
+
+### 部署参数
+
+| 参数 | 说明 | 适用场景 |
+|------|------|---------|
+| 无参数 | 智能增量部署 | 日常代码更新（推荐） |
+| `--clean` | 清理所有数据重新开始 | 首次部署、磁盘清理后 |
+| `--skip-update` | 跳过 git pull | 本地代码测试 |
+| `--force-rebuild` | 强制无缓存重建 | 解决缓存问题 |
+
+### 系统架构
+
+```
+Web UI (Go)  ←→  realtime (Python)  ←→  AkShare API
+    ↓                    ↓                    ↓
+PostgreSQL         Redis Cache         实时行情数据
+```
+
+### 详细文档
+
+完整的部署指南、使用示例、故障排查请查看：
+
+📖 **[部署指南 DEPLOYMENT.md](DEPLOYMENT.md)**
+
+包含内容：
+- 快速开始与场景化使用示例
+- 智能增量构建原理说明
+- CICD 集成示例（GitHub Actions / GitLab CI）
+- 故障排查手册
+- 性能优化建议
+- 最佳实践
+
+### 常用命令
+
+```bash
+# 查看服务状态
+docker compose ps
+
+# 查看日志
+docker compose logs realtime -f
+docker compose logs webui -f
+
+# 重新采集数据
+docker compose exec realtime python3 -c 'from services.data_sources.akshare_source import AkShareDataSource; AkShareDataSource().fetch_and_store()'
+
+# 清理历史数据
+bash cleanup-old-data.sh
+```
+
+### 访问看板
+
+部署完成后访问：http://localhost:8080
+
+---

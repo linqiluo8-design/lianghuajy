@@ -1,27 +1,159 @@
 #!/bin/bash
 # -*- coding: utf-8 -*-
 #
-# 完整部署脚本 - 从0开始部署整个系统
+# ============================================
+# Funcat 涨跌停看板系统 - 智能部署脚本
+# ============================================
 #
-# 功能：
-# 1. 检查 Docker 环境
-# 2. 更新代码（git pull）
-# 3. 停止现有服务（可选清理数据）
-# 4. 启动基础服务（PostgreSQL, Redis）
-# 5. 初始化数据库（创建表、视图、索引）
-# 6. 运行数据库迁移（添加扩展字段）
-# 7. 构建并启动应用服务（realtime, webui）
-# 8. 采集实时数据（AkShare）
-# 9. 聚合板块数据
-# 10. 验证部署结果
-# 11. 显示访问地址
+# 版本: v2.0
+# 作者: Funcat Team
+# 更新: 2026-01-07
+#
+# 脚本说明：
+# ----------
+# 本脚本提供完整的从 0 到生产的自动化部署流程，支持：
+#   • 全新环境一键部署
+#   • 日常代码更新的智能增量构建
+#   • 服务变更自动检测（只重建有变化的服务）
+#   • Git 代码管理（自动 pull、stash、重试）
+#   • 数据库迁移自动执行
+#   • 健康检查与验证
+#
+# 核心特性：
+# ----------
+# 1. 智能增量构建
+#    - 自动检测文件变更（git diff）
+#    - 只重建有变化的服务（realtime/webui）
+#    - 性能提升：无变更 30秒，单服务 2-3分钟，全量 5-10分钟
+#
+# 2. 生产级可靠性
+#    - Git pull 失败重试（4次，指数退避）
+#    - 服务健康检查（PostgreSQL/Redis）
+#    - 数据验证（自动 SQL 查询）
+#    - 完整错误处理（set -e）
+#
+# 3. CICD 友好
+#    - 非交互式模式支持
+#    - 明确的退出码
+#    - 详细的彩色日志
+#    - 支持多参数组合
+#
+# 部署流程（11 步骤）：
+# ---------------------
+# 1.  检查 Docker 环境（docker/docker-compose 版本）
+# 2.  更新代码（git pull 带重试，支持 stash）
+# 2.5 检测服务变更（智能增量构建决策）
+# 3.  停止现有服务（可选清理数据卷）
+# 4.  启动基础服务（PostgreSQL + Redis 健康检查）
+# 5.  初始化数据库（创建表结构，跳过已存在）
+# 6.  运行数据库迁移（004/005/006 幂等执行）
+# 7.  构建并启动应用服务（智能增量构建）
+# 8.  采集实时数据（AkShare API）
+# 9.  聚合板块数据（sector_aggregator）
+# 10. 验证部署结果（SQL 数据验证）
+# 11. 显示访问信息（端口、命令、摘要）
 #
 # 使用方法：
-#   bash deploy-from-scratch.sh                   # 保留现有数据，智能增量构建
-#   bash deploy-from-scratch.sh --clean           # 清理所有数据重新开始
-#   bash deploy-from-scratch.sh --skip-update     # 跳过代码更新
-#   bash deploy-from-scratch.sh --force-rebuild   # 强制重新构建所有服务
+# ----------
+# bash deploy-from-scratch.sh                   # 默认：保留数据 + 智能增量构建
+# bash deploy-from-scratch.sh --clean           # 清理所有数据重新开始
+# bash deploy-from-scratch.sh --skip-update     # 跳过 git pull（使用本地代码）
+# bash deploy-from-scratch.sh --force-rebuild   # 强制无缓存重建所有服务
 #
+# 参数组合：
+# ----------
+# bash deploy-from-scratch.sh --clean --skip-update       # 清理数据 + 使用本地代码
+# bash deploy-from-scratch.sh --clean --force-rebuild     # 最彻底的重新部署
+#
+# 使用场景：
+# ----------
+# 场景 1: 首次部署新环境
+#   bash deploy-from-scratch.sh --clean
+#
+# 场景 2: 日常代码更新（推荐）
+#   git push
+#   bash deploy-from-scratch.sh  # 自动检测变更，智能增量构建
+#
+# 场景 3: 修改了 services/data_sources/akshare_source.py
+#   bash deploy-from-scratch.sh  # 自动检测，只重建 realtime
+#
+# 场景 4: 修改了 web-ui/backend/static/index.html
+#   bash deploy-from-scratch.sh  # 自动检测，只重建 webui
+#
+# 场景 5: 磁盘清理后重新部署
+#   bash deploy-from-scratch.sh --clean
+#
+# 场景 6: Docker 缓存问题
+#   bash deploy-from-scratch.sh --force-rebuild
+#
+# 场景 7: 本地代码测试（不更新代码）
+#   bash deploy-from-scratch.sh --skip-update
+#
+# 变更检测规则：
+# --------------
+# realtime 服务触发条件：
+#   - services/          （Python 业务逻辑）
+#   - config/            （配置文件）
+#   - requirements.txt   （Python 依赖）
+#   - deployment/docker/Dockerfile.realtime
+#
+# webui 服务触发条件：
+#   - web-ui/backend/    （Go 后端 + 前端资源）
+#   - docker-compose.yml （容器配置）
+#
+# 数据库迁移检测：
+#   - migrations/        （迁移脚本）
+#   - deployment/sql/    （初始化 SQL）
+#
+# 性能数据：
+# ----------
+# 无变更部署:    30 秒     （跳过构建，仅重启）
+# 单服务变更:    2-3 分钟  （只构建 1 个服务）
+# 双服务变更:    5-10 分钟 （构建 2 个服务）
+# 强制重建:      10-15 分钟（无缓存全量重建）
+#
+# 依赖要求：
+# ----------
+# - Docker 20.0+
+# - Docker Compose 2.0+
+# - Git 2.0+
+# - Bash 4.0+
+#
+# 环境变量（可选）：
+# ------------------
+# POSTGRES_PASSWORD    - PostgreSQL 密码（默认: funcat_password_change_me）
+# REDIS_PASSWORD       - Redis 密码（默认: redis_password_change_me）
+# WEBUI_PORT           - Web UI 端口（默认: 8080）
+#
+# 故障排查：
+# ----------
+# 1. Docker 启动失败
+#    - 检查 Docker 服务: systemctl status docker
+#    - 查看日志: docker compose logs -f
+#
+# 2. 数据库连接失败
+#    - 检查 PostgreSQL: docker compose logs postgres
+#    - 重启数据库: docker compose restart postgres
+#
+# 3. Git pull 失败
+#    - 方案 1: git stash && bash deploy-from-scratch.sh
+#    - 方案 2: bash deploy-from-scratch.sh --skip-update
+#
+# 4. 看板无数据
+#    - 检查交易日: date（周末/节假日无数据）
+#    - 手动采集: docker compose exec realtime python3 -c '...'
+#    - 查看日志: docker compose logs realtime -f
+#
+# 详细文档：
+# ----------
+# 完整使用指南、CICD 集成、最佳实践请查看:
+#   📖 DEPLOYMENT.md
+#
+# 联系与支持：
+# ------------
+# GitHub Issues: https://github.com/cedricporter/funcat/issues
+#
+# ============================================
 
 set -e  # 遇到错误立即退出
 
