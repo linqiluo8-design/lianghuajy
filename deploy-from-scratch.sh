@@ -5,19 +5,21 @@
 #
 # 功能：
 # 1. 检查 Docker 环境
-# 2. 停止现有服务（可选清理数据）
-# 3. 启动基础服务（PostgreSQL, Redis）
-# 4. 初始化数据库（创建表、视图、索引）
-# 5. 运行数据库迁移（添加扩展字段）
-# 6. 构建并启动应用服务（realtime, webui）
-# 7. 采集实时数据（AkShare）
-# 8. 聚合板块数据
-# 9. 验证部署结果
-# 10. 显示访问地址
+# 2. 更新代码（git pull）
+# 3. 停止现有服务（可选清理数据）
+# 4. 启动基础服务（PostgreSQL, Redis）
+# 5. 初始化数据库（创建表、视图、索引）
+# 6. 运行数据库迁移（添加扩展字段）
+# 7. 构建并启动应用服务（realtime, webui）
+# 8. 采集实时数据（AkShare）
+# 9. 聚合板块数据
+# 10. 验证部署结果
+# 11. 显示访问地址
 #
 # 使用方法：
-#   bash deploy-from-scratch.sh          # 保留现有数据
-#   bash deploy-from-scratch.sh --clean  # 清理所有数据重新开始
+#   bash deploy-from-scratch.sh                # 保留现有数据
+#   bash deploy-from-scratch.sh --clean        # 清理所有数据重新开始
+#   bash deploy-from-scratch.sh --skip-update  # 跳过代码更新
 #
 
 set -e  # 遇到错误立即退出
@@ -56,10 +58,15 @@ log_step() {
 
 # 检查参数
 CLEAN_DATA=false
-if [[ "$1" == "--clean" ]]; then
-    CLEAN_DATA=true
-    log_warning "将清理所有数据并重新开始！"
-fi
+SKIP_UPDATE=false
+for arg in "$@"; do
+    if [[ "$arg" == "--clean" ]]; then
+        CLEAN_DATA=true
+        log_warning "将清理所有数据并重新开始！"
+    elif [[ "$arg" == "--skip-update" ]]; then
+        SKIP_UPDATE=true
+    fi
+done
 
 # 获取当前日期
 TODAY=$(date +%Y-%m-%d)
@@ -72,7 +79,7 @@ echo ""
 # ============================================
 # 步骤 1: 检查 Docker 环境
 # ============================================
-log_step "步骤 1/10: 检查 Docker 环境"
+log_step "步骤 1/11: 检查 Docker 环境"
 
 if ! command -v docker &> /dev/null; then
     log_error "Docker 未安装，请先安装 Docker"
@@ -94,9 +101,71 @@ log_info "Docker 版本: $(docker --version)"
 log_info "Docker Compose 版本: $($DOCKER_COMPOSE_CMD version --short 2>/dev/null || echo 'legacy')"
 
 # ============================================
-# 步骤 2: 停止现有服务
+# 步骤 2: 更新代码
 # ============================================
-log_step "步骤 2/10: 停止现有服务"
+log_step "步骤 2/11: 更新代码"
+
+if [[ "$SKIP_UPDATE" == true ]]; then
+    log_info "跳过代码更新（--skip-update 参数）"
+else
+    # 检查是否是 git 仓库
+    if [[ -d .git ]]; then
+        log_info "检查 Git 状态..."
+
+        # 获取当前分支
+        CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "unknown")
+        log_info "当前分支: $CURRENT_BRANCH"
+
+        # 检查是否有未提交的更改
+        if [[ -n $(git status --porcelain 2>/dev/null) ]]; then
+            log_warning "检测到未提交的更改"
+            git status --short
+            echo ""
+            read -p "是否暂存更改并继续？(y/n): " STASH_CHANGES
+            if [[ "$STASH_CHANGES" == "y" ]]; then
+                log_info "暂存本地更改..."
+                git stash push -m "deploy-from-scratch auto stash $(date '+%Y-%m-%d %H:%M:%S')"
+                log_success "本地更改已暂存"
+            else
+                log_warning "跳过代码更新，使用当前代码"
+                SKIP_UPDATE=true
+            fi
+        fi
+
+        if [[ "$SKIP_UPDATE" == false ]]; then
+            log_info "拉取最新代码..."
+
+            # 尝试拉取代码，带重试机制
+            for i in {1..4}; do
+                if git pull origin "$CURRENT_BRANCH" 2>&1; then
+                    log_success "代码已更新到最新版本"
+
+                    # 显示最新提交
+                    log_info "最新提交:"
+                    git log -1 --oneline --decorate
+                    break
+                else
+                    if [[ $i -lt 4 ]]; then
+                        WAIT_TIME=$((2 ** i))
+                        log_warning "代码拉取失败，${WAIT_TIME}秒后重试..."
+                        sleep $WAIT_TIME
+                    else
+                        log_warning "代码拉取失败，将使用当前代码继续部署"
+                    fi
+                fi
+            done
+        fi
+    else
+        log_info "非 Git 仓库，跳过代码更新"
+    fi
+fi
+
+log_success "代码准备完成"
+
+# ============================================
+# 步骤 3: 停止现有服务
+# ============================================
+log_step "步骤 3/11: 停止现有服务"
 
 log_info "停止所有服务..."
 $DOCKER_COMPOSE_CMD down || true
@@ -116,9 +185,9 @@ fi
 log_success "现有服务已停止"
 
 # ============================================
-# 步骤 3: 启动基础服务
+# 步骤 4: 启动基础服务
 # ============================================
-log_step "步骤 3/10: 启动基础服务（PostgreSQL, Redis）"
+log_step "步骤 4/11: 启动基础服务（PostgreSQL, Redis）"
 
 log_info "启动 postgres..."
 $DOCKER_COMPOSE_CMD up -d postgres
@@ -155,9 +224,9 @@ for i in {1..15}; do
 done
 
 # ============================================
-# 步骤 4: 初始化数据库基础结构
+# 步骤 5: 初始化数据库基础结构
 # ============================================
-log_step "步骤 4/10: 初始化数据库基础结构"
+log_step "步骤 5/11: 初始化数据库基础结构"
 
 # 检查表是否已存在
 TABLE_EXISTS=$($DOCKER_COMPOSE_CMD exec -T postgres psql -U funcat_user -d funcat -tAc \
@@ -184,9 +253,9 @@ else
 fi
 
 # ============================================
-# 步骤 5: 运行数据库迁移
+# 步骤 6: 运行数据库迁移
 # ============================================
-log_step "步骤 5/10: 运行数据库迁移（扩展字段和视图）"
+log_step "步骤 6/11: 运行数据库迁移（扩展字段和视图）"
 
 log_info "迁移 004: 添加板块相关字段..."
 $DOCKER_COMPOSE_CMD exec -T postgres psql -U funcat_user -d funcat < migrations/004_add_sector_fields.sql > /dev/null 2>&1 || true
@@ -207,9 +276,9 @@ log_info "当前数据库表："
 $DOCKER_COMPOSE_CMD exec -T postgres psql -U funcat_user -d funcat -c "\dt" 2>/dev/null | grep -E "public|daily_limit|sector" || true
 
 # ============================================
-# 步骤 6: 构建并启动应用服务
+# 步骤 7: 构建并启动应用服务
 # ============================================
-log_step "步骤 6/10: 构建并启动应用服务"
+log_step "步骤 7/11: 构建并启动应用服务"
 
 log_info "构建 realtime 服务..."
 $DOCKER_COMPOSE_CMD build realtime
@@ -243,9 +312,9 @@ else
 fi
 
 # ============================================
-# 步骤 7: 采集实时数据
+# 步骤 8: 采集实时数据
 # ============================================
-log_step "步骤 7/10: 采集实时数据（AkShare）"
+log_step "步骤 8/11: 采集实时数据（AkShare）"
 
 log_info "运行数据采集任务..."
 $DOCKER_COMPOSE_CMD exec -T realtime python3 << 'PYTHON_SCRIPT'
@@ -280,9 +349,9 @@ else
 fi
 
 # ============================================
-# 步骤 8: 聚合板块数据
+# 步骤 9: 聚合板块数据
 # ============================================
-log_step "步骤 8/10: 聚合板块数据"
+log_step "步骤 9/11: 聚合板块数据"
 
 log_info "运行板块数据聚合..."
 $DOCKER_COMPOSE_CMD exec -T realtime python3 << 'PYTHON_SCRIPT'
@@ -322,9 +391,9 @@ else
 fi
 
 # ============================================
-# 步骤 9: 验证部署结果
+# 步骤 10: 验证部署结果
 # ============================================
-log_step "步骤 9/10: 验证部署结果"
+log_step "步骤 10/11: 验证部署结果"
 
 log_info "检查数据库数据..."
 $DOCKER_COMPOSE_CMD exec -T postgres psql -U funcat_user -d funcat << 'SQL'
@@ -384,9 +453,9 @@ SQL
 log_success "数据验证完成"
 
 # ============================================
-# 步骤 10: 显示访问信息
+# 步骤 11: 显示访问信息
 # ============================================
-log_step "步骤 10/10: 部署完成"
+log_step "步骤 11/11: 部署完成"
 
 # 获取 webui 端口
 WEB_PORT=$($DOCKER_COMPOSE_CMD port webui 8080 2>/dev/null | cut -d: -f2 || echo "8080")
