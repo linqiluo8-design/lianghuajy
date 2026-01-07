@@ -17,9 +17,10 @@
 # 11. 显示访问地址
 #
 # 使用方法：
-#   bash deploy-from-scratch.sh                # 保留现有数据
-#   bash deploy-from-scratch.sh --clean        # 清理所有数据重新开始
-#   bash deploy-from-scratch.sh --skip-update  # 跳过代码更新
+#   bash deploy-from-scratch.sh                   # 保留现有数据，智能增量构建
+#   bash deploy-from-scratch.sh --clean           # 清理所有数据重新开始
+#   bash deploy-from-scratch.sh --skip-update     # 跳过代码更新
+#   bash deploy-from-scratch.sh --force-rebuild   # 强制重新构建所有服务
 #
 
 set -e  # 遇到错误立即退出
@@ -59,12 +60,15 @@ log_step() {
 # 检查参数
 CLEAN_DATA=false
 SKIP_UPDATE=false
+FORCE_REBUILD=false
 for arg in "$@"; do
     if [[ "$arg" == "--clean" ]]; then
         CLEAN_DATA=true
         log_warning "将清理所有数据并重新开始！"
     elif [[ "$arg" == "--skip-update" ]]; then
         SKIP_UPDATE=true
+    elif [[ "$arg" == "--force-rebuild" ]]; then
+        FORCE_REBUILD=true
     fi
 done
 
@@ -161,6 +165,73 @@ else
 fi
 
 log_success "代码准备完成"
+
+# ============================================
+# 步骤 2.5: 检测服务变更（智能增量构建）
+# ============================================
+REBUILD_REALTIME=false
+REBUILD_WEBUI=false
+
+if [[ "$FORCE_REBUILD" == true ]]; then
+    log_info "强制重新构建所有服务（--force-rebuild 参数）"
+    REBUILD_REALTIME=true
+    REBUILD_WEBUI=true
+elif [[ -d .git ]] && [[ "$SKIP_UPDATE" == false ]]; then
+    log_info "检测服务变更..."
+
+    # 获取最近一次 pull 的变更文件
+    # 如果是首次部署，检查最近的提交
+    CHANGED_FILES=$(git diff --name-only HEAD@{1} HEAD 2>/dev/null || git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+
+    if [[ -z "$CHANGED_FILES" ]]; then
+        log_info "未检测到文件变更，跳过构建检查"
+    else
+        log_info "检测到以下文件变更："
+        echo "$CHANGED_FILES" | head -10
+        if [[ $(echo "$CHANGED_FILES" | wc -l) -gt 10 ]]; then
+            echo "... (还有 $(($(echo "$CHANGED_FILES" | wc -l) - 10)) 个文件)"
+        fi
+        echo ""
+
+        # 检测 realtime 服务相关变更
+        if echo "$CHANGED_FILES" | grep -qE "^(services/|config/|deployment/docker/Dockerfile\.realtime|requirements\.txt)"; then
+            log_info "✓ 检测到 realtime 服务相关变更"
+            REBUILD_REALTIME=true
+        fi
+
+        # 检测 webui 服务相关变更
+        if echo "$CHANGED_FILES" | grep -qE "^(web-ui/backend/|docker-compose\.yml)"; then
+            log_info "✓ 检测到 webui 服务相关变更"
+            REBUILD_WEBUI=true
+        fi
+
+        # 检测数据库迁移变更
+        if echo "$CHANGED_FILES" | grep -qE "^(migrations/|deployment/sql/)"; then
+            log_info "✓ 检测到数据库迁移文件变更"
+        fi
+    fi
+else
+    # 跳过更新或非 git 仓库，默认重新构建
+    log_info "无法检测变更，将重新构建所有服务"
+    REBUILD_REALTIME=true
+    REBUILD_WEBUI=true
+fi
+
+# 显示构建计划
+echo ""
+log_info "服务构建计划："
+if [[ "$REBUILD_REALTIME" == true ]]; then
+    echo "  • realtime: 需要重新构建"
+else
+    echo "  • realtime: 跳过构建（无变更）"
+fi
+
+if [[ "$REBUILD_WEBUI" == true ]]; then
+    echo "  • webui: 需要重新构建"
+else
+    echo "  • webui: 跳过构建（无变更）"
+fi
+echo ""
 
 # ============================================
 # 步骤 3: 停止现有服务
@@ -280,16 +351,38 @@ $DOCKER_COMPOSE_CMD exec -T postgres psql -U funcat_user -d funcat -c "\dt" 2>/d
 # ============================================
 log_step "步骤 7/11: 构建并启动应用服务"
 
-log_info "构建 realtime 服务..."
-$DOCKER_COMPOSE_CMD build realtime
+# 智能构建 realtime 服务
+if [[ "$REBUILD_REALTIME" == true ]]; then
+    log_info "构建 realtime 服务..."
+    if [[ "$FORCE_REBUILD" == true ]]; then
+        $DOCKER_COMPOSE_CMD build --no-cache realtime
+        log_success "realtime 服务已重新构建（无缓存）"
+    else
+        $DOCKER_COMPOSE_CMD build realtime
+        log_success "realtime 服务已构建"
+    fi
+else
+    log_info "跳过 realtime 服务构建（无变更）"
+fi
 
-log_info "构建 webui 服务..."
-$DOCKER_COMPOSE_CMD build webui
+# 智能构建 webui 服务
+if [[ "$REBUILD_WEBUI" == true ]]; then
+    log_info "构建 webui 服务..."
+    if [[ "$FORCE_REBUILD" == true ]]; then
+        $DOCKER_COMPOSE_CMD build --no-cache webui
+        log_success "webui 服务已重新构建（无缓存）"
+    else
+        $DOCKER_COMPOSE_CMD build webui
+        log_success "webui 服务已构建"
+    fi
+else
+    log_info "跳过 webui 服务构建（无变更）"
+fi
 
-log_info "启动 realtime 服务..."
+log_info "启动/更新 realtime 服务..."
 $DOCKER_COMPOSE_CMD up -d realtime
 
-log_info "启动 webui 服务..."
+log_info "启动/更新 webui 服务..."
 $DOCKER_COMPOSE_CMD up -d webui
 
 log_info "等待服务启动..."
@@ -483,22 +576,26 @@ echo "==========================================================================
 echo "🔧 常用命令"
 echo "================================================================================"
 echo ""
-echo "  查看服务状态:        docker compose ps"
-echo "  查看 realtime 日志:  docker compose logs realtime -f"
-echo "  查看 webui 日志:     docker compose logs webui -f"
-echo "  重新采集数据:        docker compose exec realtime python3 -c 'from services.data_sources.akshare_source import AkShareDataSource; AkShareDataSource().fetch_and_store()'"
-echo "  重新聚合数据:        docker compose exec realtime python3 -c 'from services.sector_aggregator import SectorAggregator; a = SectorAggregator(); a.connect(); a.aggregate(); a.close()'"
-echo "  停止所有服务:        docker compose down"
-echo "  清理历史数据:        bash cleanup-old-data.sh"
+echo "  查看服务状态:          docker compose ps"
+echo "  查看 realtime 日志:    docker compose logs realtime -f"
+echo "  查看 webui 日志:       docker compose logs webui -f"
+echo "  重新采集数据:          docker compose exec realtime python3 -c 'from services.data_sources.akshare_source import AkShareDataSource; AkShareDataSource().fetch_and_store()'"
+echo "  重新聚合数据:          docker compose exec realtime python3 -c 'from services.sector_aggregator import SectorAggregator; a = SectorAggregator(); a.connect(); a.aggregate(); a.close()'"
+echo "  停止所有服务:          docker compose down"
+echo "  清理历史数据:          bash cleanup-old-data.sh"
+echo "  增量更新部署:          bash deploy-from-scratch.sh"
+echo "  强制重新构建:          bash deploy-from-scratch.sh --force-rebuild"
 echo ""
 echo "================================================================================"
 echo "💡 提示"
 echo "================================================================================"
 echo ""
+echo "  • 脚本会自动检测服务变更，只重新构建有变化的服务（提高部署速度）"
 echo "  • 如果浏览器显示旧数据，请强制刷新（Ctrl+Shift+R 或 Cmd+Shift+R）"
 echo "  • 如果看板没有数据，请检查是否为交易日（周末和节假日无数据）"
 echo "  • 数据每次运行脚本时会自动更新为最新数据"
 echo "  • 可以定时运行数据采集任务（如每天 15:30 执行）"
+echo "  • 使用 --force-rebuild 可强制重新构建所有服务（解决缓存问题）"
 echo ""
 echo "================================================================================"
 
@@ -508,6 +605,8 @@ log_info "部署摘要"
 echo "  • 数据库: PostgreSQL 13"
 echo "  • 缓存: Redis 6"
 echo "  • 数据源: AkShare（实时行情）"
+echo "  • 部署模式: $(if [[ "$FORCE_REBUILD" == true ]]; then echo "强制重建"; elif [[ "$REBUILD_REALTIME" == true ]] || [[ "$REBUILD_WEBUI" == true ]]; then echo "增量构建"; else echo "仅更新"; fi)"
+echo "  • 构建服务: $(if [[ "$REBUILD_REALTIME" == true ]] && [[ "$REBUILD_WEBUI" == true ]]; then echo "realtime + webui"; elif [[ "$REBUILD_REALTIME" == true ]]; then echo "realtime"; elif [[ "$REBUILD_WEBUI" == true ]]; then echo "webui"; else echo "无"; fi)"
 echo "  • 部署时间: $(date '+%Y-%m-%d %H:%M:%S')"
 echo "  • 数据日期: $TODAY"
 echo ""
