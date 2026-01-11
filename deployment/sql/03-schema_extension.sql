@@ -7,16 +7,16 @@
 -- ============================================
 CREATE TABLE IF NOT EXISTS sectors (
     id SERIAL PRIMARY KEY,
-    sector_code VARCHAR(20) UNIQUE NOT NULL COMMENT '板块代码',
-    sector_name VARCHAR(100) NOT NULL COMMENT '板块名称',
-    sector_type VARCHAR(20) NOT NULL COMMENT '板块类型: industry, concept, region',
-    parent_sector_id INT REFERENCES sectors(id) COMMENT '父板块ID',
+    sector_code VARCHAR(20) UNIQUE NOT NULL,
+    sector_name VARCHAR(100) NOT NULL,
+    sector_type VARCHAR(20) NOT NULL,
+    parent_sector_id INT REFERENCES sectors(id),
 
     -- 元数据
-    stock_count INT DEFAULT 0 COMMENT '成分股数量',
-    description TEXT COMMENT '板块描述',
-    sort_order INT DEFAULT 0 COMMENT '排序',
-    is_active BOOLEAN DEFAULT TRUE COMMENT '是否激活',
+    stock_count INT DEFAULT 0,
+    description TEXT,
+    sort_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -33,15 +33,15 @@ COMMENT ON TABLE sectors IS '板块信息表';
 -- ============================================
 CREATE TABLE IF NOT EXISTS stock_sector_mapping (
     id SERIAL PRIMARY KEY,
-    stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
-    stock_name VARCHAR(50) COMMENT '股票名称',
-    sector_id INT REFERENCES sectors(id) NOT NULL COMMENT '板块ID',
+    stock_code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
+    sector_id INT REFERENCES sectors(id) NOT NULL,
 
     -- 权重
-    weight DECIMAL(5, 2) DEFAULT 1.0 COMMENT '在板块中的权重',
+    weight DECIMAL(5, 2) DEFAULT 1.0,
 
     -- 状态
-    is_active BOOLEAN DEFAULT TRUE COMMENT '是否有效',
+    is_active BOOLEAN DEFAULT TRUE,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -59,46 +59,46 @@ COMMENT ON TABLE stock_sector_mapping IS '股票-板块映射表';
 -- ============================================
 CREATE TABLE IF NOT EXISTS daily_limit_stats (
     id SERIAL PRIMARY KEY,
-    trade_date DATE NOT NULL COMMENT '交易日期',
-    stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
-    stock_name VARCHAR(50) COMMENT '股票名称',
+    trade_date DATE NOT NULL,
+    stock_code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
 
     -- 价格信息
-    open_price DECIMAL(10, 2) COMMENT '开盘价',
-    close_price DECIMAL(10, 2) COMMENT '收盘价',
-    high_price DECIMAL(10, 2) COMMENT '最高价',
-    low_price DECIMAL(10, 2) COMMENT '最低价',
-    pre_close DECIMAL(10, 2) COMMENT '昨收价',
+    open_price DECIMAL(10, 2),
+    close_price DECIMAL(10, 2),
+    high_price DECIMAL(10, 2),
+    low_price DECIMAL(10, 2),
+    pre_close DECIMAL(10, 2),
 
     -- 涨跌幅
-    change_pct DECIMAL(10, 4) COMMENT '涨跌幅(%)',
+    change_pct DECIMAL(10, 4),
 
     -- 涨跌停状态
-    limit_type VARCHAR(20) COMMENT '类型: limit_up(涨停), limit_down(跌停), none',
-    is_one_word BOOLEAN DEFAULT FALSE COMMENT '是否一字板',
+    limit_type VARCHAR(20),
+    is_one_word BOOLEAN DEFAULT FALSE,
 
     -- 炸板信息
-    is_broken BOOLEAN DEFAULT FALSE COMMENT '是否炸板',
-    broken_time TIME COMMENT '炸板时间',
-    is_resealed BOOLEAN DEFAULT FALSE COMMENT '是否回封',
-    reseal_time TIME COMMENT '回封时间',
-    broken_count INT DEFAULT 0 COMMENT '炸板次数',
+    is_broken BOOLEAN DEFAULT FALSE,
+    broken_time TIME,
+    is_resealed BOOLEAN DEFAULT FALSE,
+    reseal_time TIME,
+    broken_count INT DEFAULT 0,
 
     -- 封单信息
-    seal_amount BIGINT COMMENT '封单量(手)',
-    seal_ratio DECIMAL(10, 4) COMMENT '封单比率',
+    seal_amount BIGINT,
+    seal_ratio DECIMAL(10, 4),
 
     -- 连板信息
-    consecutive_limit_days INT DEFAULT 0 COMMENT '连续涨停天数(0表示非连板)',
+    consecutive_limit_days INT DEFAULT 0,
 
     -- 成交信息
-    volume BIGINT COMMENT '成交量',
-    turnover DECIMAL(20, 2) COMMENT '成交额',
-    turnover_rate DECIMAL(10, 4) COMMENT '换手率(%)',
+    volume BIGINT,
+    turnover DECIMAL(20, 2),
+    turnover_rate DECIMAL(10, 4),
 
     -- 排序和标记
-    first_limit_time TIME COMMENT '首次涨停时间',
-    limit_order INT COMMENT '涨停排序',
+    first_limit_time TIME,
+    limit_order INT,
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
@@ -118,26 +118,26 @@ COMMENT ON TABLE daily_limit_stats IS '每日涨跌停统计表';
 -- ============================================
 CREATE TABLE IF NOT EXISTS consecutive_limits (
     id SERIAL PRIMARY KEY,
-    stock_code VARCHAR(20) NOT NULL COMMENT '股票代码',
-    stock_name VARCHAR(50) COMMENT '股票名称',
+    stock_code VARCHAR(20) NOT NULL,
+    stock_name VARCHAR(50),
 
     -- 连板周期
-    start_date DATE NOT NULL COMMENT '开始日期',
-    end_date DATE COMMENT '结束日期(NULL表示进行中)',
-    consecutive_days INT NOT NULL COMMENT '连续天数',
+    start_date DATE NOT NULL,
+    end_date DATE,
+    consecutive_days INT NOT NULL,
 
     -- 状态
-    status VARCHAR(20) DEFAULT 'active' COMMENT '状态: active(进行中), ended(已结束)',
-    end_reason VARCHAR(50) COMMENT '结束原因: limit_down(跌停), normal(正常回调), broken(炸板未封)',
+    status VARCHAR(20) DEFAULT 'active',
+    end_reason VARCHAR(50),
 
     -- 统计信息
-    total_gain_pct DECIMAL(10, 4) COMMENT '累计涨幅(%)',
-    avg_seal_ratio DECIMAL(10, 4) COMMENT '平均封单比率',
-    total_turnover DECIMAL(20, 2) COMMENT '累计成交额',
+    total_gain_pct DECIMAL(10, 4),
+    avg_seal_ratio DECIMAL(10, 4),
+    total_turnover DECIMAL(20, 2),
 
     -- 板块信息
-    main_sector VARCHAR(100) COMMENT '主板块',
-    concept_tags TEXT[] COMMENT '概念标签数组',
+    main_sector VARCHAR(100),
+    concept_tags TEXT[],
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -155,34 +155,34 @@ COMMENT ON TABLE consecutive_limits IS '连板记录表';
 -- ============================================
 CREATE TABLE IF NOT EXISTS sector_daily_stats (
     id SERIAL PRIMARY KEY,
-    trade_date DATE NOT NULL COMMENT '交易日期',
-    sector_id INT REFERENCES sectors(id) NOT NULL COMMENT '板块ID',
+    trade_date DATE NOT NULL,
+    sector_id INT REFERENCES sectors(id) NOT NULL,
 
     -- 涨跌停统计
-    limit_up_count INT DEFAULT 0 COMMENT '涨停数',
-    limit_down_count INT DEFAULT 0 COMMENT '跌停数',
-    one_word_count INT DEFAULT 0 COMMENT '一字涨停数',
+    limit_up_count INT DEFAULT 0,
+    limit_down_count INT DEFAULT 0,
+    one_word_count INT DEFAULT 0,
 
     -- 炸板统计
-    broken_count INT DEFAULT 0 COMMENT '炸板数',
-    broken_resealed_count INT DEFAULT 0 COMMENT '炸板回封数',
-    broken_not_resealed_count INT DEFAULT 0 COMMENT '炸板未回封数',
+    broken_count INT DEFAULT 0,
+    broken_resealed_count INT DEFAULT 0,
+    broken_not_resealed_count INT DEFAULT 0,
 
     -- 连板统计
-    consecutive_2_count INT DEFAULT 0 COMMENT '2连板数',
-    consecutive_3_count INT DEFAULT 0 COMMENT '3连板数',
-    consecutive_4_count INT DEFAULT 0 COMMENT '4连板数',
-    consecutive_5_plus_count INT DEFAULT 0 COMMENT '5连板以上数',
+    consecutive_2_count INT DEFAULT 0,
+    consecutive_3_count INT DEFAULT 0,
+    consecutive_4_count INT DEFAULT 0,
+    consecutive_5_plus_count INT DEFAULT 0,
 
     -- 整体统计
-    total_stocks INT DEFAULT 0 COMMENT '总股票数',
-    up_count INT DEFAULT 0 COMMENT '上涨数',
-    down_count INT DEFAULT 0 COMMENT '下跌数',
-    avg_change_pct DECIMAL(10, 4) COMMENT '平均涨跌幅',
+    total_stocks INT DEFAULT 0,
+    up_count INT DEFAULT 0,
+    down_count INT DEFAULT 0,
+    avg_change_pct DECIMAL(10, 4),
 
     -- 资金统计
-    total_turnover DECIMAL(20, 2) COMMENT '总成交额',
-    net_inflow DECIMAL(20, 2) COMMENT '净流入',
+    total_turnover DECIMAL(20, 2),
+    net_inflow DECIMAL(20, 2),
 
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
 
