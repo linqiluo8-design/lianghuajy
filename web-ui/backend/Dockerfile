@@ -15,18 +15,13 @@ ENV GOSUMDB=off
 # 安装依赖
 RUN apk add --no-cache git
 
-# 【优化第1步】先复制 go.mod 和源代码（用于生成 go.sum）
-COPY go.mod ./
-COPY *.go ./
-
-# 【优化第2步】生成 go.sum 并下载依赖（这一层会被缓存）
-# 只有 go.mod 或 *.go 的 import 改变时才会重新执行
-RUN go mod tidy && go mod download
-
-# 【优化第3步】复制其他文件（static等，修改这些文件不会触发依赖下载）
+# 【修复】先复制所有文件，确保 go mod tidy 能访问完整项目
 COPY . .
 
-# 编译（添加并行编译优化）
+# 生成完整的 go.sum 并下载所有依赖（包括间接依赖）
+RUN go mod tidy && go mod download
+
+# 编译
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o funcat-web-ui .
 
 # ============================================
