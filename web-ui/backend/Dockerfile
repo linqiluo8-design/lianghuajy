@@ -15,13 +15,17 @@ ENV GOSUMDB=off
 # 安装依赖
 RUN apk add --no-cache git
 
-# 【优化】先复制 go.mod（和 go.sum 如果存在），利用 Docker 缓存层
+# 【优化】先复制 go.mod 和 go.sum（如果存在），利用 Docker 缓存层
 COPY go.mod ./
-# 如果 go.sum 存在则复制（使用通配符避免文件不存在时报错）
+# 可选复制 go.sum（使用通配符避免文件不存在时报错）
 COPY go.su[m] ./
 
-# 生成 go.sum 并下载依赖（这一层会被缓存，除非 go.mod/go.sum 变化）
-RUN go mod tidy && go mod download
+# 【智能处理】如果 go.sum 不存在则首次生成，之后就会利用缓存
+# 注意：一旦 go.sum 生成并提交到 git，此层就会被完美缓存
+RUN if [ ! -f go.sum ]; then \
+        echo "首次构建：生成 go.sum..." && go mod tidy; \
+    fi && \
+    go mod download
 
 # 【优化】之后再复制源代码（代码变化不会导致重新下载依赖）
 COPY . .
