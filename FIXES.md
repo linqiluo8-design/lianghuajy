@@ -288,6 +288,112 @@ docker compose build webui 2>&1 | grep -i cached
 
 ---
 
+## [2026-01-11] 部署脚本集成 go.sum 自动提取
+
+### 问题描述
+
+首次部署时，go.sum 文件不存在，需要手动运行脚本提取并提交。这增加了操作复杂度，容易被遗忘。
+
+### 改进方案
+
+**集成到 deploy-from-scratch.sh：**
+- 添加步骤 7.5：提取并提交 go.sum
+- 自动从构建镜像提取 go.sum 文件
+- 友好提示用户提交以优化后续构建
+
+**实现位置：**
+```
+步骤 7:   构建并启动应用服务
+步骤 7.5: 提取 go.sum 文件（新增）✨
+步骤 8:   采集实时数据
+```
+
+### 功能特性
+
+1. **自动检测**
+   - 检查 web-ui/backend/go.sum 是否存在
+   - 检查 funcat-go/go.sum 是否存在
+
+2. **智能提取**
+   - 只在构建后且文件不存在时提取
+   - 从 Docker 镜像创建临时容器
+   - 复制 go.sum 到本地目录
+
+3. **友好提示**
+   ```
+   📝 发现新的 go.sum 文件，建议提交到 git 以优化构建速度
+
+   优势：
+     • 首次构建：~150 秒（使用国内镜像）
+     • go.sum 提交后代码变更：~30 秒（利用 Docker 缓存）
+
+   提交命令：
+     git add web-ui/backend/go.sum
+     git commit -m 'feat: 添加 go.sum 优化 Docker 构建缓存'
+     git push
+
+   详细说明请查看: DOCKER_OPTIMIZATION.md
+   ```
+
+### 使用流程
+
+**首次部署：**
+```bash
+# 1. 运行部署脚本
+bash deploy-from-scratch.sh --clean
+
+# 2. 脚本自动：
+#    - 构建 webui 服务
+#    - 提取 go.sum 文件
+#    - 显示提交提示
+
+# 3. 提交 go.sum
+git add web-ui/backend/go.sum
+git commit -m 'feat: 添加 go.sum 优化 Docker 构建缓存'
+git push
+```
+
+**后续部署：**
+```bash
+# go.sum 已存在，自动利用 Docker 缓存
+bash deploy-from-scratch.sh
+
+# 构建速度：370 秒 → 30 秒 ⚡
+```
+
+### 修改文件
+
+- `deploy-from-scratch.sh`
+  - 新增步骤 7.5（go.sum 提取）
+  - 更新脚本头部文档
+  - 更新提示信息
+
+- `DOCKER_OPTIMIZATION.md`
+  - 记录集成改进历史
+  - 说明自动化流程
+
+### 相关工具
+
+**手动提取工具（仍然保留）：**
+```bash
+bash deployment/scripts/extract-gosum.sh webui
+bash deployment/scripts/extract-gosum.sh funcat-go
+```
+
+**适用场景：**
+- 脚本外单独提取 go.sum
+- 调试和验证
+- CI/CD 流水线
+
+### 优势
+
+✅ **自动化** - 无需记忆额外命令
+✅ **友好提示** - 明确说明优化效果
+✅ **智能检测** - 避免重复操作
+✅ **向后兼容** - 保留独立脚本
+
+---
+
 ## 修复记录模板
 
 ```markdown

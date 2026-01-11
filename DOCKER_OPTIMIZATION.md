@@ -139,6 +139,29 @@ RUN if [ ! -f go.sum ]; then \
 - 一旦 go.sum 存在并提交，此层完美缓存
 - 代码变更不会重新下载依赖
 
+### 2026-01-11: 集成 go.sum 提取到部署脚本
+
+**改进:**
+- 在 `deploy-from-scratch.sh` 中添加步骤 7.5
+- 自动从构建镜像提取 go.sum 文件
+- 提示用户提交以优化构建缓存
+
+**实现:**
+```bash
+# 步骤 7.5: 提取并提交 go.sum（优化 Docker 缓存）
+if [[ "$REBUILD_WEBUI" == true ]]; then
+    if [[ ! -f "web-ui/backend/go.sum" ]]; then
+        # 从构建镜像提取 go.sum
+        # 提示用户提交到 git
+    fi
+fi
+```
+
+**优势:**
+- 自动化流程：无需手动运行 extract-gosum.sh
+- 友好提示：明确说明优化效果和提交命令
+- 智能检测：只在需要时提取
+
 ---
 
 ## 核心优化原则

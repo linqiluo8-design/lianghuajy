@@ -38,7 +38,7 @@
 #    - 详细的彩色日志
 #    - 支持多参数组合
 #
-# 部署流程（11 步骤）：
+# 部署流程（12 步骤）：
 # ---------------------
 # 1.  检查 Docker 环境（docker/docker-compose 版本）
 # 2.  更新代码（git pull 带重试，支持 stash）
@@ -48,6 +48,7 @@
 # 5.  初始化数据库（创建表结构，跳过已存在）
 # 6.  运行数据库迁移（004/005/006 幂等执行）
 # 7.  构建并启动应用服务（智能增量构建）
+# 7.5 提取 go.sum 文件（优化 Docker 构建缓存）
 # 8.  采集实时数据（AkShare API）
 # 9.  聚合板块数据（sector_aggregator）
 # 10. 验证部署结果（SQL 数据验证）
@@ -497,6 +498,26 @@ else
     log_info "跳过 realtime 服务构建（无变更）"
 fi
 
+# 检查并提取 funcat-go 的 go.sum（如果服务被重建）
+if command -v docker >/dev/null 2>&1; then
+    FUNCAT_GO_BUILT=$(docker images -q lianghuajy-funcat-go:latest 2>/dev/null)
+    if [[ -n "$FUNCAT_GO_BUILT" ]] && [[ ! -f "funcat-go/go.sum" ]]; then
+        log_info "检查 funcat-go go.sum..."
+        TEMP_CONTAINER="temp-funcat-gosum-$$"
+        if docker create --name "$TEMP_CONTAINER" lianghuajy-funcat-go:latest > /dev/null 2>&1; then
+            if docker cp "$TEMP_CONTAINER:/build/go.sum" funcat-go/go.sum 2>/dev/null; then
+                log_success "✓ funcat-go go.sum 已提取"
+                docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+                if git status --porcelain | grep -q "funcat-go/go.sum"; then
+                    log_info "💡 建议提交 funcat-go/go.sum 以优化构建缓存"
+                fi
+            else
+                docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+            fi
+        fi
+    fi
+fi
+
 # 智能构建 webui 服务
 if [[ "$REBUILD_WEBUI" == true ]]; then
     log_info "构建 webui 服务..."
@@ -509,6 +530,56 @@ if [[ "$REBUILD_WEBUI" == true ]]; then
     fi
 else
     log_info "跳过 webui 服务构建（无变更）"
+fi
+
+# ============================================
+# 步骤 7.5: 提取并提交 go.sum（优化 Docker 缓存）
+# ============================================
+if [[ "$REBUILD_WEBUI" == true ]]; then
+    log_info "检查 go.sum 文件..."
+
+    # 检查 web-ui/backend/go.sum 是否存在
+    if [[ ! -f "web-ui/backend/go.sum" ]]; then
+        log_warning "go.sum 文件不存在，尝试从构建镜像提取..."
+
+        # 创建临时容器从镜像提取 go.sum
+        TEMP_CONTAINER="temp-gosum-extract-$$"
+
+        if docker create --name "$TEMP_CONTAINER" lianghuajy-webui:latest > /dev/null 2>&1; then
+            # 从容器复制 go.sum
+            if docker cp "$TEMP_CONTAINER:/build/go.sum" web-ui/backend/go.sum 2>/dev/null; then
+                log_success "✓ go.sum 已从构建镜像提取"
+
+                # 清理临时容器
+                docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+
+                # 检查 git 状态
+                if git status --porcelain | grep -q "web-ui/backend/go.sum"; then
+                    echo ""
+                    log_info "📝 发现新的 go.sum 文件，建议提交到 git 以优化构建速度"
+                    echo ""
+                    echo "  优势："
+                    echo "    • 首次构建：~150 秒（使用国内镜像）"
+                    echo "    • go.sum 提交后代码变更：~30 秒（利用 Docker 缓存）"
+                    echo ""
+                    echo "  提交命令："
+                    echo "    git add web-ui/backend/go.sum"
+                    echo "    git commit -m 'feat: 添加 go.sum 优化 Docker 构建缓存'"
+                    echo "    git push"
+                    echo ""
+                    log_info "详细说明请查看: DOCKER_OPTIMIZATION.md"
+                    echo ""
+                fi
+            else
+                log_warning "go.sum 提取失败（容器中可能不存在）"
+                docker rm "$TEMP_CONTAINER" > /dev/null 2>&1
+            fi
+        else
+            log_warning "无法创建临时容器提取 go.sum"
+        fi
+    else
+        log_success "✓ go.sum 文件已存在（Docker 缓存已优化）"
+    fi
 fi
 
 log_info "启动/更新 realtime 服务..."
@@ -723,6 +794,7 @@ echo "💡 提示"
 echo "================================================================================"
 echo ""
 echo "  • 脚本会自动检测服务变更，只重新构建有变化的服务（提高部署速度）"
+echo "  • 首次构建会自动提取 go.sum，建议提交以优化后续构建速度"
 echo "  • 如果浏览器显示旧数据，请强制刷新（Ctrl+Shift+R 或 Cmd+Shift+R）"
 echo "  • 如果看板没有数据，请检查是否为交易日（周末和节假日无数据）"
 echo "  • 数据每次运行脚本时会自动更新为最新数据"
