@@ -288,6 +288,65 @@ docker compose build webui 2>&1 | grep -i cached
 
 ---
 
+## [2026-01-11] 修复 Docker 构建错误：missing go.sum entry
+
+### 问题描述
+
+部署时 webui 服务构建失败，报错：
+```
+ERROR [builder 8/8] RUN CGO_ENABLED=0 GOOS=linux go build
+main.go:11:2: missing go.sum entry for module providing package github.com/gin-contrib/cors
+main.go:12:2: missing go.sum entry for module providing package github.com/gin-gonic/gin
+```
+
+### 根本原因
+
+**Dockerfile 逻辑错误：**
+```dockerfile
+# ❌ 错误：go mod tidy 在复制源代码之前执行
+COPY go.mod ./
+RUN go mod tidy  # 找不到 main.go，无法生成 go.sum！
+COPY . .
+```
+
+**核心问题：**
+- `go mod tidy` 需要分析源代码（main.go）中的 import 语句
+- 但源代码在之后的 `COPY . .` 才复制进容器
+- 导致 go mod tidy 无法生成正确的 go.sum
+
+### 修复方案
+
+**调整 Dockerfile 层级顺序：**
+```dockerfile
+# ✅ 正确：先复制源代码，再执行 go mod tidy
+COPY go.mod ./
+COPY *.go ./              # 先复制源代码
+RUN go mod tidy && go mod download  # 再生成 go.sum
+COPY . .                  # 最后复制其他文件
+RUN go build
+```
+
+### 缓存效果
+
+| 修改内容 | 触发依赖下载 | 构建时间 |
+|----------|------------|----------|
+| static/index.html | ❌ 否 | ~60 秒 |
+| *.go 代码 | ✅ 是 | ~150 秒 |
+| go.mod | ✅ 是 | ~150 秒 |
+
+### 影响范围
+
+- `web-ui/backend/Dockerfile`
+
+### 验证方法
+
+```bash
+docker compose build webui
+docker compose up -d webui
+```
+
+---
+
 ## [2026-01-11] 部署脚本集成 go.sum 自动提取
 
 ### 问题描述

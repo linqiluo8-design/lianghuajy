@@ -116,28 +116,75 @@ RUN go mod tidy && go mod download  # 破坏缓存！
 - 添加 `.dockerignore`
 - 添加 `GOSUMDB=off`
 
-### 2026-01-11: 修正"回头路"（本次修复）
+### 2026-01-11: 修正"回头路"（本次修复）+ 构建错误修复
 
-**问题:**
+**问题 1:**
 - 发现重新引入了 `go mod tidy`，走了"回头路"
 - 需要恢复之前的优化，同时兼容 go.sum 不存在的情况
 
-**最终方案:**
+**尝试的错误方案:**
 ```dockerfile
-# ✅ 智能处理：首次生成 go.sum，之后利用缓存
+# ❌ 错误：go mod tidy 在 COPY 源代码之前执行
 COPY go.mod ./
-COPY go.su[m] ./  # 可选复制（通配符）
+COPY go.su[m] ./
 
 RUN if [ ! -f go.sum ]; then \
-        echo "首次构建：生成 go.sum..." && go mod tidy; \
+        go mod tidy;  # 找不到源代码，无法生成 go.sum！
     fi && \
     go mod download
+
+COPY . .  # 源代码在 go mod tidy 之后才复制
+```
+
+**问题 2: 构建失败**
+```
+ERROR: missing go.sum entry for module providing package github.com/gin-gonic/gin
+```
+
+**根本原因:**
+- `go mod tidy` 需要分析源代码（main.go）中的 import 语句才能生成正确的 go.sum
+- 但我们在 `COPY . .` **之前**就执行了 `go mod tidy`
+- 导致 go.sum 没有正确生成，构建失败
+
+**正确方案（最终）:**
+```dockerfile
+# ✅ 方案：先复制必要文件，再生成 go.sum
+# 第1步：复制 go.mod 和源代码
+COPY go.mod ./
+COPY *.go ./
+
+# 第2步：生成 go.sum 并下载依赖（会被缓存）
+RUN go mod tidy && go mod download
+
+# 第3步：复制其他文件（static 等）
+COPY . .
+
+# 第4步：编译
+RUN go build
 ```
 
 **优势:**
-- 首次构建自动生成 go.sum
-- 一旦 go.sum 存在并提交，此层完美缓存
-- 代码变更不会重新下载依赖
+- 自动生成 go.sum（不需要提前提交）
+- 修改 static 文件不会触发依赖重新下载
+- 构建成功，解决了 missing go.sum entry 错误
+
+**缓存效果:**
+- 修改 go.mod 或 *.go 的 import → 重新下载依赖（~150 秒）
+- 修改 static/index.html → 不重新下载依赖（~60 秒）
+- 修改 *.go 的代码但 import 不变 → 仍会触发 go mod tidy（折中方案）
+
+**理想方案（未来）:**
+```dockerfile
+# 🌟 最佳实践：go.sum 提前生成并提交到 git
+COPY go.mod go.sum ./
+RUN go mod download  # 完美缓存！
+COPY . .
+RUN go build
+```
+
+提交 go.sum 后的效果：
+- 代码变更：~30 秒（完美缓存）
+- 依赖变更：~150 秒
 
 ### 2026-01-11: 集成 go.sum 提取到部署脚本
 
