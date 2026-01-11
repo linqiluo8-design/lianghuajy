@@ -479,6 +479,236 @@ bash deployment/scripts/extract-gosum.sh funcat-go
 
 ---
 
+## [2026-01-11] 修复数据采集类名错误：ImportError AkShareDataSource
+
+### 问题描述
+
+部署脚本 `deploy-from-scratch.sh` 尝试导入 AkShare 数据源时失败：
+```
+ImportError: cannot import name 'AkShareDataSource' from 'services.data_sources'
+```
+
+### 根本原因
+
+**类名不匹配：**
+- 代码中实际类名：`AkShareSource`（services/data_sources/__init__.py:1）
+- 部署脚本使用：`AkShareDataSource`（错误）
+
+```python
+# services/data_sources/__init__.py
+class AkShareSource:  # ✅ 正确的类名
+    ...
+
+# deploy-from-scratch.sh
+python3 -c "from services.data_sources import AkShareDataSource"  # ❌ 错误引用
+```
+
+### 修复方案
+
+**修改 deploy-from-scratch.sh：**
+```bash
+# ❌ 修复前
+python3 -c "from services.data_sources import AkShareDataSource; ..."
+
+# ✅ 修复后
+python3 -c "from services.data_sources import AkShareSource; ..."
+```
+
+### 影响范围
+
+- 文件：`deploy-from-scratch.sh`（步骤 8 - 实时数据采集）
+- 行数：约 480-490 行
+
+### 如何避免
+
+1. **代码与脚本一致性检查**
+   - 部署脚本引用类名前，先查看源代码
+   - 使用 grep 验证类名
+
+2. **命名规范**
+   - 保持命名简洁一致
+   - AkShareSource > AkShareDataSource（更简洁）
+
+3. **自动化测试**
+   - 部署脚本添加 Python 导入测试
+   - CI/CD 流程验证
+
+### 验证方法
+
+```bash
+# 验证类名
+grep -n "class.*Source" services/data_sources/__init__.py
+
+# 测试导入
+python3 -c "from services.data_sources import AkShareSource; print('✓ 导入成功')"
+
+# 完整部署测试
+bash deploy-from-scratch.sh
+```
+
+### 相关文件
+
+- `services/data_sources/__init__.py` - 数据源类定义
+- `services/data_sources/akshare_source.py` - AkShare 实现
+- `deploy-from-scratch.sh` - 部署脚本
+
+---
+
+## [2026-01-11] 修复数据库字段错误：column "updated_at" does not exist
+
+### 问题描述
+
+实时数据采集服务启动后报错：
+```
+psycopg2.errors.UndefinedColumn: column "updated_at" of relation "daily_limit_stats" does not exist
+LINE 1: ...ecutive_limit_days, first_limit_time, created_at, updated_at...
+```
+
+### 根本原因
+
+**表结构与代码不匹配：**
+
+1. **数据库表定义**（schema.sql）
+   ```sql
+   CREATE TABLE daily_limit_stats (
+       ...
+       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+       -- ❌ 没有 updated_at 字段
+   );
+   ```
+
+2. **Python 代码尝试插入**（realtime_fetcher.py:242-278）
+   ```python
+   cursor.execute("""
+       INSERT INTO daily_limit_stats (
+           ..., created_at, updated_at  -- ❌ 尝试插入不存在的字段
+       ) VALUES (..., NOW(), NOW())
+       ON CONFLICT (trade_date, stock_code)
+       DO UPDATE SET
+           ...
+           updated_at = NOW()  -- ❌ 尝试更新不存在的字段
+   """)
+   ```
+
+### 修复方案
+
+**修改 services/realtime_fetcher.py：**
+
+```python
+# ❌ 修复前（第 242-278 行）
+INSERT INTO daily_limit_stats (
+    trade_date, stock_code, stock_name,
+    ...,
+    created_at, updated_at  # 删除 updated_at
+) VALUES (
+    %s, %s, %s,
+    ...,
+    NOW(), NOW()  # 删除第二个 NOW()
+)
+ON CONFLICT (trade_date, stock_code)
+DO UPDATE SET
+    close_price = EXCLUDED.close_price,
+    ...,
+    updated_at = NOW()  # 删除此行
+
+# ✅ 修复后
+INSERT INTO daily_limit_stats (
+    trade_date, stock_code, stock_name,
+    ...,
+    created_at  # 只保留 created_at
+) VALUES (
+    %s, %s, %s,
+    ...,
+    NOW()  # 只保留一个 NOW()
+)
+ON CONFLICT (trade_date, stock_code)
+DO UPDATE SET
+    close_price = EXCLUDED.close_price,
+    ...
+    # updated_at 相关行已删除
+```
+
+### 影响范围
+
+- 文件：`services/realtime_fetcher.py`
+- 方法：`RealtimeFetcher._save_to_database()` (lines 204-298)
+- 改动：
+  - 删除 INSERT 语句中的 `updated_at` 字段
+  - 删除 VALUES 中的一个 `NOW()`
+  - 删除 ON CONFLICT UPDATE 中的 `updated_at = NOW()`
+
+### 为什么没有 updated_at 字段？
+
+**设计考虑：**
+1. `daily_limit_stats` 是每日快照数据
+2. 每个交易日每只股票只有一条记录
+3. 通过 `ON CONFLICT UPDATE` 更新当天数据
+4. `created_at` 记录首次插入时间即可
+
+**如果需要追踪更新时间：**
+- 可以添加 `updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`
+- 但对于日内多次更新的涨跌停数据，updated_at 价值有限
+- 当前设计优先简洁性
+
+### 如何避免
+
+1. **代码与 Schema 同步检查**
+   ```bash
+   # 查看表结构
+   docker compose exec db psql -U funcat_user -d funcat -c "\d daily_limit_stats"
+
+   # 检查代码中使用的字段
+   grep -n "updated_at" services/realtime_fetcher.py
+   ```
+
+2. **使用 ORM 框架（建议）**
+   - SQLAlchemy、Django ORM 等
+   - 自动映射表结构，避免字段不匹配
+
+3. **Schema 变更管理**
+   - 使用数据库迁移工具（Alembic、Flyway）
+   - 版本控制 Schema 变更
+   - 自动生成代码与数据库同步
+
+4. **部署前测试**
+   ```bash
+   # 本地测试完整流程
+   bash deploy-from-scratch.sh --clean
+   docker compose logs -f realtime  # 观察是否有错误
+   ```
+
+### 验证方法
+
+```bash
+# 1. 拉取最新代码
+git pull origin claude/debug-dashboard-akshare-9Igcv
+
+# 2. 重新构建服务
+docker compose build realtime
+
+# 3. 重启服务
+docker compose up -d realtime
+
+# 4. 查看日志（应该没有字段错误）
+docker compose logs -f realtime
+
+# 5. 验证数据是否正常插入
+docker compose exec db psql -U funcat_user -d funcat -c "
+    SELECT stock_code, stock_name, change_pct, created_at
+    FROM daily_limit_stats
+    ORDER BY created_at DESC
+    LIMIT 10;
+"
+```
+
+### 相关文档
+
+- 表结构定义：`deployment/sql/schema.sql` (daily_limit_stats 表)
+- 数据采集逻辑：`services/realtime_fetcher.py`
+- PostgreSQL INSERT ... ON CONFLICT: https://www.postgresql.org/docs/current/sql-insert.html#SQL-ON-CONFLICT
+
+---
+
 ## 修复记录模板
 
 ```markdown
