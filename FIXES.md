@@ -91,6 +91,39 @@ bash deploy-from-scratch.sh --clean --skip-update
 
 # 检查 PostgreSQL 日志
 docker compose logs postgres | grep -i error
+
+# 验证字段注释是否成功添加
+docker compose exec postgres psql -U funcat_user -d funcat -c "\d+ select_results"
+```
+
+### 后续改进：添加字段注释脚本
+
+虽然移除了内联 COMMENT 解决了语法错误，但字段注释对数据库文档化很重要。
+
+**改进方案：**
+- 创建独立的 `comments.sql` 脚本
+- 使用 PostgreSQL 标准的 `COMMENT ON COLUMN` 语法
+- 在 docker-compose.yml 中配置自动执行
+
+**新增文件：**
+- `deployment/sql/comments.sql` - 包含所有表字段的注释定义
+
+**执行顺序：**
+```
+01-schema.sql       → 创建表结构
+02-init_data.sql    → 初始化数据
+03-webui_tables.sql → Web UI 表
+04-comments.sql     → 添加字段注释 ✨ 新增
+05-yangjia_schema_fixed.sql
+06-sector_strength.sql
+07-test_data.sql
+```
+
+**示例语法：**
+```sql
+-- PostgreSQL 标准注释语法
+COMMENT ON COLUMN users.username IS '用户名';
+COMMENT ON COLUMN users.email IS '邮箱';
 ```
 
 ### 相关文档
