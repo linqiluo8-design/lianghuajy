@@ -615,9 +615,9 @@ log_step "步骤 8/11: 采集实时数据（AkShare）"
 log_info "运行数据采集任务..."
 $DOCKER_COMPOSE_CMD exec -T realtime python3 << 'PYTHON_SCRIPT'
 import sys
-from services.data_sources.akshare_source import AkShareDataSource
+from services.data_sources.akshare_source import AkShareSource
 
-source = AkShareDataSource()
+source = AkShareSource()
 
 try:
     print("📥 开始采集数据...")
@@ -782,7 +782,7 @@ echo ""
 echo "  查看服务状态:          docker compose ps"
 echo "  查看 realtime 日志:    docker compose logs realtime -f"
 echo "  查看 webui 日志:       docker compose logs webui -f"
-echo "  重新采集数据:          docker compose exec realtime python3 -c 'from services.data_sources.akshare_source import AkShareDataSource; AkShareDataSource().fetch_and_store()'"
+echo "  重新采集数据:          docker compose exec realtime python3 -c 'from services.data_sources.akshare_source import AkShareSource; AkShareSource().fetch_and_store()'"
 echo "  重新聚合数据:          docker compose exec realtime python3 -c 'from services.sector_aggregator import SectorAggregator; a = SectorAggregator(); a.connect(); a.aggregate(); a.close()'"
 echo "  停止所有服务:          docker compose down"
 echo "  清理历史数据:          bash cleanup-old-data.sh"
