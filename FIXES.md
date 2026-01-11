@@ -126,6 +126,28 @@ COMMENT ON COLUMN users.username IS '用户名';
 COMMENT ON COLUMN users.email IS '邮箱';
 ```
 
+**使用方法：**
+
+1. **自动执行（新部署）**
+   - 使用 `bash deploy-from-scratch.sh --clean` 部署
+   - comments.sql 会在初始化时自动执行
+
+2. **手动执行（已有数据库）**
+   ```bash
+   # 使用便捷脚本
+   bash deployment/scripts/add-comments.sh
+
+   # 或直接使用 docker exec
+   docker compose exec postgres psql -U funcat_user -d funcat < deployment/sql/comments.sql
+   ```
+
+3. **验证注释**
+   ```bash
+   # 查看表结构和字段注释
+   docker compose exec postgres psql -U funcat_user -d funcat -c "\d+ select_results"
+   docker compose exec postgres psql -U funcat_user -d funcat -c "\d+ users"
+   ```
+
 ### 相关文档
 
 - PostgreSQL 官方文档：https://www.postgresql.org/docs/current/sql-comment.html
