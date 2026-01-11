@@ -1,0 +1,46 @@
+# Git 相关
+.git
+.gitignore
+.gitattributes
+
+# IDE 相关
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# 构建产物
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+funcat-web-ui
+
+# 测试覆盖
+*.out
+*.test
+
+# 依赖
+vendor/
+
+# 临时文件
+*.log
+*.tmp
+tmp/
+
+# 文档
+README.md
+*.md
+LICENSE
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml

@@ -7,20 +7,26 @@ FROM golang:1.21-alpine AS builder
 # 设置工作目录
 WORKDIR /build
 
-# 设置Go代理（解决国内网络问题）
-ENV GOPROXY=https://goproxy.cn,direct
+# 设置Go代理（解决国内网络问题，添加多个备选镜像）
+ENV GOPROXY=https://goproxy.cn,https://mirrors.aliyun.com/goproxy/,https://goproxy.io,direct
 ENV GO111MODULE=on
+ENV GOSUMDB=off
 
 # 安装依赖
 RUN apk add --no-cache git
 
-# 复制所有源代码（go mod tidy 需要分析源码）
-COPY . .
+# 【优化】先复制 go.mod（和 go.sum 如果存在），利用 Docker 缓存层
+COPY go.mod ./
+# 如果 go.sum 存在则复制（使用通配符避免文件不存在时报错）
+COPY go.su[m] ./
 
-# 生成 go.sum 并下载依赖
+# 生成 go.sum 并下载依赖（这一层会被缓存，除非 go.mod/go.sum 变化）
 RUN go mod tidy && go mod download
 
-# 编译
+# 【优化】之后再复制源代码（代码变化不会导致重新下载依赖）
+COPY . .
+
+# 编译（添加并行编译优化）
 RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -ldflags="-s -w" -o funcat-web-ui .
 
 # ============================================

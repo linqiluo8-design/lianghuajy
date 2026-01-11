@@ -155,6 +155,139 @@ COMMENT ON COLUMN users.email IS '邮箱';
 
 ---
 
+## [2026-01-11] 优化 Web UI 构建速度（Go 依赖下载加速）
+
+### 问题描述
+
+Web UI 后端服务构建时间过长（超过 370 秒），主要卡在下载 Go 模块依赖阶段：
+- 从 github.com 下载依赖包缓慢
+- 从 golang.org 下载标准库缓慢
+- 每次代码变更都重新下载所有依赖
+
+### 根本原因
+
+1. **Docker 缓存层未优化**
+   - 原先 `COPY . .` 在下载依赖之前
+   - 任何代码变更都导致依赖层缓存失效
+
+2. **Go 代理配置不够完善**
+   - 只配置了单一 GOPROXY 镜像
+   - 没有禁用 GOSUMDB 验证（可能导致额外网络请求）
+
+3. **构建上下文未优化**
+   - 没有 .dockerignore 文件
+   - 复制了不必要的文件到构建上下文
+
+### 修复方案
+
+**1. 优化 Dockerfile 层级顺序**
+```dockerfile
+# ❌ 错误做法：先复制所有代码
+COPY . .
+RUN go mod download
+
+# ✅ 正确做法：先复制依赖文件
+COPY go.mod ./
+COPY go.su[m] ./  # 使用通配符处理 go.sum 可能不存在的情况
+RUN go mod tidy && go mod download
+COPY . .  # 最后复制源代码
+```
+
+**2. 增强 Go 代理配置**
+```dockerfile
+ENV GOPROXY=https://goproxy.cn,https://mirrors.aliyun.com/goproxy/,https://goproxy.io,direct
+ENV GOSUMDB=off  # 禁用校验和数据库（加速下载）
+```
+
+**3. 创建 .dockerignore**
+排除不必要的文件：
+- .git, .vscode, .idea
+- README.md, *.md, LICENSE
+- Dockerfile*, docker-compose*.yml
+- 构建产物、临时文件
+
+### 优化效果
+
+**优化前：**
+- 首次构建：~370 秒
+- 代码变更后重建：~370 秒（完全重新下载依赖）
+
+**优化后（预期）：**
+- 首次构建：~150 秒（使用国内镜像加速）
+- 代码变更后重建：~30 秒（利用 Docker 缓存，不重新下载依赖）
+- 依赖变更后重建：~150 秒
+
+### 影响范围
+
+- 文件：`web-ui/backend/Dockerfile`
+- 新增：`web-ui/backend/.dockerignore`
+
+### 技术细节
+
+**Docker 缓存层机制：**
+```
+Layer 1: FROM golang:1.21-alpine      ✓ 始终缓存
+Layer 2: COPY go.mod                  ✓ go.mod 不变时缓存
+Layer 3: RUN go mod download          ✓ go.mod 不变时缓存（关键！）
+Layer 4: COPY . .                     ✗ 代码变更，此层失效
+Layer 5: RUN go build                 ✗ 代码变更，重新编译
+```
+
+只要 `go.mod` 不变，Layer 3 的依赖下载会被缓存，节省大量时间！
+
+### 验证方法
+
+```bash
+# 首次构建（会下载依赖）
+docker compose build webui
+
+# 修改代码后重新构建（应该跳过依赖下载）
+# 1. 修改 main.go
+# 2. 重新构建
+docker compose build webui
+
+# 查看构建日志，应该看到 "CACHED" 标记
+docker compose build webui 2>&1 | grep -i cached
+```
+
+### 进一步优化建议
+
+1. **使用 Go Vendor（可选）**
+   ```bash
+   # 预先下载依赖到 vendor 目录
+   go mod vendor
+   # Dockerfile 中使用
+   RUN go build -mod=vendor
+   ```
+
+2. **使用 BuildKit 缓存挂载**
+   ```dockerfile
+   RUN --mount=type=cache,target=/go/pkg/mod \
+       go mod download
+   ```
+
+3. **多阶段构建优化（已实现）**
+   - builder 阶段：构建
+   - runtime 阶段：只复制二进制（镜像更小）
+
+### 如何避免
+
+1. **Dockerfile 最佳实践**
+   - 把频繁变化的层放在后面
+   - 把不常变化的层放在前面
+   - 依赖下载 → 代码复制 → 编译
+
+2. **配置多个 Go 代理镜像**
+   - goproxy.cn（七牛云）
+   - mirrors.aliyun.com（阿里云）
+   - goproxy.io（国际备选）
+
+3. **使用 .dockerignore**
+   - 减少构建上下文大小
+   - 加快 COPY 操作速度
+
+---
+
 ## 修复记录模板
 
 ```markdown
