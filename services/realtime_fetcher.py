@@ -248,7 +248,7 @@ class RealtimeFetcher:
                         limit_reason, industry, concept_tags,
                         consecutive_limit_days, first_limit_time,
                         today_auction_unmatched,
-                        created_at, updated_at
+                        created_at
                     ) VALUES (
                         %s, %s, %s,
                         %s, %s, %s, %s, %s,
@@ -257,7 +257,7 @@ class RealtimeFetcher:
                         %s, %s, %s,
                         %s, %s,
                         %s,
-                        NOW(), NOW()
+                        NOW()
                     )
                     ON CONFLICT (trade_date, stock_code)
                     DO UPDATE SET
@@ -275,8 +275,7 @@ class RealtimeFetcher:
                         concept_tags = EXCLUDED.concept_tags,
                         consecutive_limit_days = EXCLUDED.consecutive_limit_days,
                         first_limit_time = EXCLUDED.first_limit_time,
-                        today_auction_unmatched = EXCLUDED.today_auction_unmatched,
-                        updated_at = NOW()
+                        today_auction_unmatched = EXCLUDED.today_auction_unmatched
                 """, (
                     trade_date, row['stock_code'], row['stock_name'],
                     row['open_price'], row['price'], row['high_price'], row['low_price'], row['pre_close'],
