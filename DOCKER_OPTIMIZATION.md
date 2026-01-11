@@ -146,32 +146,39 @@ ERROR: missing go.sum entry for module providing package github.com/gin-gonic/gi
 - 但我们在 `COPY . .` **之前**就执行了 `go mod tidy`
 - 导致 go.sum 没有正确生成，构建失败
 
-**正确方案（最终）:**
+**尝试的优化方案（失败）:**
 ```dockerfile
-# ✅ 方案：先复制必要文件，再生成 go.sum
-# 第1步：复制 go.mod 和源代码
+# ❌ 仍然失败：只复制 *.go 不够
 COPY go.mod ./
 COPY *.go ./
-
-# 第2步：生成 go.sum 并下载依赖（会被缓存）
 RUN go mod tidy && go mod download
-
-# 第3步：复制其他文件（static 等）
 COPY . .
+```
 
-# 第4步：编译
+**问题 3: go.sum 仍然不完整**
+```
+ERROR: missing go.sum entry for go.mod file
+github.com/go-redis/redis/v8@v8.11.5: missing go.sum entry
+```
+
+**根本原因:**
+- `go mod tidy` 需要访问完整的项目结构（可能有子目录、子包）
+- 只复制 go.mod 和 *.go 不完整，无法正确分析所有依赖
+- 间接依赖的 go.mod 文件的 hash 没有被记录到 go.sum
+
+**最终简化方案（确保成功）:**
+```dockerfile
+# ✅ 简化但可靠：先复制所有文件
+COPY . .
+RUN go mod tidy && go mod download
 RUN go build
 ```
 
-**优势:**
-- 自动生成 go.sum（不需要提前提交）
-- 修改 static 文件不会触发依赖重新下载
-- 构建成功，解决了 missing go.sum entry 错误
-
-**缓存效果:**
-- 修改 go.mod 或 *.go 的 import → 重新下载依赖（~150 秒）
-- 修改 static/index.html → 不重新下载依赖（~60 秒）
-- 修改 *.go 的代码但 import 不变 → 仍会触发 go mod tidy（折中方案）
+**权衡:**
+- ✅ 构建成功，go.sum 完整正确
+- ✅ 简单可靠，不会出错
+- ❌ 任何文件变更都触发依赖下载（~150 秒）
+- ❌ 失去了缓存优化
 
 **理想方案（未来）:**
 ```dockerfile

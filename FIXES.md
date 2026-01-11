@@ -314,25 +314,50 @@ COPY . .
 - 但源代码在之后的 `COPY . .` 才复制进容器
 - 导致 go mod tidy 无法生成正确的 go.sum
 
-### 修复方案
+### 尝试的修复方案（失败）
 
-**调整 Dockerfile 层级顺序：**
+**第一次尝试：**
 ```dockerfile
-# ✅ 正确：先复制源代码，再执行 go mod tidy
 COPY go.mod ./
-COPY *.go ./              # 先复制源代码
-RUN go mod tidy && go mod download  # 再生成 go.sum
-COPY . .                  # 最后复制其他文件
+COPY *.go ./
+RUN go mod tidy && go mod download
+COPY . .
+```
+
+**仍然失败：**
+```
+ERROR: missing go.sum entry for go.mod file
+github.com/go-redis/redis/v8@v8.11.5: missing go.sum entry
+```
+
+**原因：** 只复制 *.go 不够，go mod tidy 需要完整项目结构
+
+### 最终修复方案
+
+**简化 Dockerfile（确保成功）：**
+```dockerfile
+# ✅ 先复制所有文件
+COPY . .
+RUN go mod tidy && go mod download
 RUN go build
 ```
 
-### 缓存效果
+### 权衡说明
 
-| 修改内容 | 触发依赖下载 | 构建时间 |
-|----------|------------|----------|
-| static/index.html | ❌ 否 | ~60 秒 |
-| *.go 代码 | ✅ 是 | ~150 秒 |
-| go.mod | ✅ 是 | ~150 秒 |
+**优势：**
+- ✅ 构建成功
+- ✅ go.sum 完整正确
+- ✅ 简单可靠
+
+**缺点：**
+- ❌ 任何文件变更都触发依赖下载（~150 秒）
+- ❌ 暂时失去缓存优化
+
+### 后续优化计划
+
+1. 构建成功后提取 go.sum
+2. 提交 go.sum 到 git
+3. 优化为理想方案（完美缓存）
 
 ### 影响范围
 
@@ -341,6 +366,7 @@ RUN go build
 ### 验证方法
 
 ```bash
+git pull origin claude/debug-dashboard-akshare-9Igcv
 docker compose build webui
 docker compose up -d webui
 ```
